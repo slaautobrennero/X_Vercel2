@@ -1,0 +1,117 @@
+{
+  "theme": "LIGHT",
+  "archetype": "4 - Swiss & High-Contrast (Adapted for Corporate/Union)",
+  "design_philosophy": "Clean, clear, and simple. Functional first, with high contrast for readability. The UI must inspire trust and authority while remaining highly accessible to users of varying technical proficiency. Content spacing is dense but structured, ensuring data heavy screens remain scannable.",
+  "colors": {
+    "primary": {
+      "DEFAULT": "#1E4D8C",
+      "hover": "#163A6A",
+      "active": "#0F2848",
+      "light": "#E8EFF7",
+      "foreground": "#FFFFFF"
+    },
+    "background": {
+      "DEFAULT": "#F9FAFB",
+      "paper": "#FFFFFF",
+      "subtle": "#F3F4F6"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "tertiary": "#9CA3AF",
+      "inverse": "#FFFFFF"
+    },
+    "border": {
+      "DEFAULT": "#E5E7EB",
+      "focus": "#1E4D8C"
+    },
+    "status": {
+      "success": { "DEFAULT": "#10B981", "bg": "#D1FAE5", "text": "#065F46" },
+      "warning": { "DEFAULT": "#F59E0B", "bg": "#FEF3C7", "text": "#92400E" },
+      "error": { "DEFAULT": "#EF4444", "bg": "#FEE2E2", "text": "#991B1B" },
+      "info": { "DEFAULT": "#3B82F6", "bg": "#DBEAFE", "text": "#1E40AF" }
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Manrope",
+      "body": "IBM Plex Sans",
+      "mono": "IBM Plex Mono"
+    },
+    "scales": {
+      "h1": "text-3xl sm:text-4xl font-bold tracking-tight text-gray-900",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900",
+      "h3": "text-xl sm:text-2xl font-semibold text-gray-800",
+      "h4": "text-lg font-medium text-gray-800",
+      "body": "text-base font-normal text-gray-600 leading-relaxed",
+      "small": "text-sm font-normal text-gray-500",
+      "tiny_label": "text-xs font-semibold tracking-[0.05em] uppercase text-gray-500"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "section_gap": "gap-8 lg:gap-12",
+    "card_padding": "p-6 sm:p-8",
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "alignment": "Left-aligned for all tabular data and forms. Center alignment reserved for empty states or specialized login cards."
+  },
+  "components": {
+    "cards": {
+      "style": "bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200",
+      "header": "border-b border-gray-100 pb-4 mb-4"
+    },
+    "buttons": {
+      "primary": "bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-4 py-2 transition-colors",
+      "secondary": "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium rounded-md px-4 py-2 transition-colors",
+      "ghost": "text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 font-medium rounded-md px-4 py-2 transition-colors",
+      "danger": "bg-red-600 hover:bg-red-700 text-white font-medium rounded-md px-4 py-2 transition-colors"
+    },
+    "inputs": {
+      "style": "w-full border-gray-300 rounded-md shadow-sm focus:border-[#1E4D8C] focus:ring-[#1E4D8C] sm:text-sm text-gray-900"
+    },
+    "tables": {
+      "wrapper": "overflow-x-auto ring-1 ring-gray-200 rounded-lg",
+      "header": "bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+      "row": "bg-white hover:bg-gray-50 border-t border-gray-200 transition-colors"
+    },
+    "badges": {
+      "style": "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+    },
+    "sidebar": {
+      "style": "w-64 bg-white border-r border-gray-200 h-screen flex flex-col hidden md:flex",
+      "link": "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+      "link_active": "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors bg-blue-50 text-[#1E4D8C]"
+    }
+  },
+  "media": {
+    "images": {
+      "logo": {
+        "url": "https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/9qoxl0rw_Full%20logo.png",
+        "description": "Full SLA logo, use in header and login screen.",
+        "alt": "SLA Sindacato Lavoratori Autostradali Logo"
+      },
+      "background": {
+        "url": "https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/vtzwwkoa_SfondoSLA.png",
+        "description": "Background image (Sfondo), use for the login page right/left split screen or as a subtle app background if needed.",
+        "alt": "Autostrade Background"
+      }
+    },
+    "icons_library": "lucide-react"
+  },
+  "accessibility_and_interactions": {
+    "hover_states": "All interactive elements must have visible hover states altering background or border.",
+    "focus_states": "Focus rings must be clearly visible, using ring-2 ring-offset-2 ring-[#1E4D8C].",
+    "contrast": "Text contrast must meet WCAG AA standards. Avoid light gray text on white backgrounds.",
+    "testing_attributes": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='submit-reimbursement-btn')."
+  },
+  "instructions_to_main_agent": [
+    "Build a robust dashboard layout with a responsive sidebar navigation (hidden on mobile, replaced by a hamburger menu in a top nav).",
+    "Implement Shadcn UI components for Tables, Forms (Inputs, Select, DatePicker), Dialogs, Tabs, and Dropdowns. Ensure all are styled with the provided color palette.",
+    "The primary font 'Manrope' should be used for all headers, and 'IBM Plex Sans' for body text. Install these via Google Fonts in index.html or global CSS.",
+    "On the Login page, create a split-screen design. Left side: Form with the logo (9qoxl0rw_Full logo.png). Right side: The background image (vtzwwkoa_SfondoSLA.png) covering the full height.",
+    "For the reimbursement form (Richiesta Rimborso), use clear multi-column layouts for complex data entry, ensuring logical grouping of fields (e.g., Personal Info, Expenses, Uploads).",
+    "Use badges to represent states in the Tabella Rimborsi (e.g., Pending, Approved, Rejected) mapped to the status colors in this JSON.",
+    "Do NOT use transparent headers over scrollable content. Headers must have a solid white background with a bottom border.",
+    "Ensure data-testid attributes are aggressively applied to forms, buttons, and navigation links to enable testing."
+  ]
+}
