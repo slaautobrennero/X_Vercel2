@@ -1,0 +1,108 @@
+# ============================================
+# SLA PORTALE - Docker Compose
+# ============================================
+# 
+# Per avviare l'applicazione:
+#   docker-compose up -d
+#
+# Per vedere i log:
+#   docker-compose logs -f
+#
+# Per fermare:
+#   docker-compose down
+#
+# Per ricostruire dopo modifiche:
+#   docker-compose up -d --build
+#
+# ============================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # MongoDB - Database
+  # ==========================================
+  mongodb:
+    image: mongo:6.0
+    container_name: sla-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      # Rimuovi queste righe se non vuoi autenticazione
+      # MONGO_INITDB_ROOT_USERNAME: admin
+      # MONGO_INITDB_ROOT_PASSWORD: password_sicura
+    ports:
+      - "27017:27017"  # Rimuovi in produzione
+    networks:
+      - sla-network
+
+  # ==========================================
+  # Backend - FastAPI
+  # ==========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sla-backend
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      # Database
+      MONGO_URL: mongodb://mongodb:27017
+      DB_NAME: sla_sindacato
+      
+      # JWT - CAMBIA IN PRODUZIONE!
+      JWT_SECRET: ${JWT_SECRET:-genera-una-chiave-segreta-lunga-almeno-32-caratteri}
+      
+      # Admin iniziale
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-superadmin@sla.it}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-CambiaQuestaPassword!}
+      
+      # Google Maps (opzionale)
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      
+      # Frontend URL per CORS
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "8001:8001"
+    networks:
+      - sla-network
+
+  # ==========================================
+  # Frontend - React (build statico con Nginx)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+    container_name: sla-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - sla-network
+
+# ==========================================
+# Volumi persistenti
+# ==========================================
+volumes:
+  mongodb_data:
+    name: sla-mongodb-data
+  uploads_data:
+    name: sla-uploads-data
+
+# ==========================================
+# Rete interna
+# ==========================================
+networks:
+  sla-network:
+    name: sla-network
+    driver: bridge
