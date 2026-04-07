@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatCurrency, STATI_RIMBORSO } from '../lib/utils';
 import axios from 'axios';
-import { Receipt, Plus, Filter, X, Upload, Eye, Check, XCircle, CreditCard } from 'lucide-react';
+import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -18,16 +18,21 @@ export default function RimborsiPage() {
     data: new Date().toISOString().split('T')[0],
     motivo_id: '',
     indirizzo_partenza: user?.indirizzo || '',
-    indirizzo_partenza_tipo: 'casa',
+    indirizzo_partenza_tipo: user?.indirizzo ? 'casa' : 'manuale',
     indirizzo_arrivo: '',
     km_andata: 0,
+    km_calcolati: null,
+    km_modificati_manualmente: false,
     andata_ritorno: true,
     uso_autostrada: false,
     costo_autostrada: 0,
-    numero_pasti: 0,
+    importo_pasti: 0,
+    numero_partecipanti_pasto: 0,
     note: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  const [calcolandoKm, setCalcolandoKm] = useState(false);
+  const [selectedMotivo, setSelectedMotivo] = useState(null);
 
   const isAdmin = ['admin', 'superadmin'].includes(user?.ruolo);
 
@@ -50,8 +55,56 @@ export default function RimborsiPage() {
     }
   };
 
+  const handleMotivoChange = (motivoId) => {
+    const motivo = motivi.find(m => m.id === motivoId);
+    setSelectedMotivo(motivo);
+    setFormData(prev => ({ ...prev, motivo_id: motivoId }));
+  };
+
+  const calcolaKm = useCallback(async () => {
+    if (!formData.indirizzo_partenza || !formData.indirizzo_arrivo) return;
+    
+    setCalcolandoKm(true);
+    try {
+      const response = await axios.post(`${API}/calcola-km`, {
+        origine: formData.indirizzo_partenza,
+        destinazione: formData.indirizzo_arrivo
+      });
+      
+      const kmCalcolati = response.data.km;
+      setFormData(prev => ({
+        ...prev,
+        km_andata: kmCalcolati,
+        km_calcolati: kmCalcolati,
+        km_modificati_manualmente: false
+      }));
+    } catch (error) {
+      console.error('Error calculating km:', error);
+      alert(error.response?.data?.detail || 'Impossibile calcolare il percorso');
+    } finally {
+      setCalcolandoKm(false);
+    }
+  }, [formData.indirizzo_partenza, formData.indirizzo_arrivo]);
+
+  const handleKmChange = (value) => {
+    const newKm = parseFloat(value) || 0;
+    const wasModified = formData.km_calcolati !== null && newKm !== formData.km_calcolati;
+    setFormData(prev => ({
+      ...prev,
+      km_andata: newKm,
+      km_modificati_manualmente: wasModified
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate note if motivo requires it
+    if (selectedMotivo?.richiede_note && !formData.note) {
+      alert('Per questo motivo le note sono obbligatorie');
+      return;
+    }
+    
     setSubmitting(true);
     try {
       await axios.post(`${API}/rimborsi`, formData);
@@ -71,15 +124,19 @@ export default function RimborsiPage() {
       data: new Date().toISOString().split('T')[0],
       motivo_id: '',
       indirizzo_partenza: user?.indirizzo || '',
-      indirizzo_partenza_tipo: 'casa',
+      indirizzo_partenza_tipo: user?.indirizzo ? 'casa' : 'manuale',
       indirizzo_arrivo: '',
       km_andata: 0,
+      km_calcolati: null,
+      km_modificati_manualmente: false,
       andata_ritorno: true,
       uso_autostrada: false,
       costo_autostrada: 0,
-      numero_pasti: 0,
+      importo_pasti: 0,
+      numero_partecipanti_pasto: 0,
       note: ''
     });
+    setSelectedMotivo(null);
   };
 
   const handleUpdateStato = async (id, stato) => {
@@ -108,8 +165,8 @@ export default function RimborsiPage() {
 
   const calcImportoPreview = () => {
     const km = formData.km_andata * (formData.andata_ritorno ? 2 : 1);
-    const importoKm = km * 0.35;
-    const importoPasti = formData.numero_pasti * 15;
+    const importoKm = km * 0.35; // Default rate, actual rate from sede
+    const importoPasti = formData.importo_pasti;
     const importoAutostrada = formData.uso_autostrada ? formData.costo_autostrada : 0;
     return importoKm + importoPasti + importoAutostrada;
   };
@@ -191,7 +248,16 @@ export default function RimborsiPage() {
                 {rimborsi.map(rimborso => (
                   <tr key={rimborso.id} className="hover:bg-gray-50" data-testid={`rimborso-row-${rimborso.id}`}>
                     <td className="px-4 py-3 text-sm text-gray-900">{formatDate(rimborso.data)}</td>
-                    {isAdmin && <td className="px-4 py-3 text-sm text-gray-600">{rimborso.user_nome}</td>}
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {rimborso.user_nome}
+                        {rimborso.km_modificati_manualmente && (
+                          <span className="ml-2 text-orange-500" title="KM modificati manualmente">
+                            <AlertTriangle size={14} className="inline" />
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-sm text-gray-600">{rimborso.motivo_nome || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{rimborso.km_totali}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{formatCurrency(rimborso.importo_totale)}</td>
@@ -249,7 +315,7 @@ export default function RimborsiPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Motivo *</label>
                   <select
                     value={formData.motivo_id}
-                    onChange={(e) => setFormData(prev => ({ ...prev, motivo_id: e.target.value }))}
+                    onChange={(e) => handleMotivoChange(e.target.value)}
                     required
                     className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
                     data-testid="rimborso-motivo-select"
@@ -262,91 +328,131 @@ export default function RimborsiPage() {
                 </div>
               </div>
 
+              {/* Indirizzo Partenza */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Partenza da</label>
                 <div className="flex gap-4 mb-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="partenza_tipo"
-                      value="casa"
-                      checked={formData.indirizzo_partenza_tipo === 'casa'}
-                      onChange={() => setFormData(prev => ({ ...prev, indirizzo_partenza_tipo: 'casa', indirizzo_partenza: user?.indirizzo || '' }))}
-                      className="text-[#1E4D8C]"
-                    />
-                    <span className="text-sm">Casa</span>
-                  </label>
+                  {user?.indirizzo && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="partenza_tipo"
+                        value="casa"
+                        checked={formData.indirizzo_partenza_tipo === 'casa'}
+                        onChange={() => setFormData(prev => ({ 
+                          ...prev, 
+                          indirizzo_partenza_tipo: 'casa', 
+                          indirizzo_partenza: user?.indirizzo || '' 
+                        }))}
+                        className="text-[#1E4D8C]"
+                      />
+                      <span className="text-sm">Casa ({user.indirizzo})</span>
+                    </label>
+                  )}
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
                       name="partenza_tipo"
                       value="manuale"
                       checked={formData.indirizzo_partenza_tipo === 'manuale'}
-                      onChange={() => setFormData(prev => ({ ...prev, indirizzo_partenza_tipo: 'manuale', indirizzo_partenza: '' }))}
+                      onChange={() => setFormData(prev => ({ 
+                        ...prev, 
+                        indirizzo_partenza_tipo: 'manuale', 
+                        indirizzo_partenza: '' 
+                      }))}
                       className="text-[#1E4D8C]"
                     />
                     <span className="text-sm">Altro indirizzo</span>
                   </label>
                 </div>
-                <input
-                  type="text"
-                  value={formData.indirizzo_partenza}
-                  onChange={(e) => setFormData(prev => ({ ...prev, indirizzo_partenza: e.target.value }))}
-                  placeholder="Indirizzo di partenza"
-                  required
-                  disabled={formData.indirizzo_partenza_tipo === 'casa'}
-                  className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none disabled:bg-gray-100"
-                  data-testid="rimborso-partenza-input"
-                />
+                {formData.indirizzo_partenza_tipo === 'manuale' && (
+                  <input
+                    type="text"
+                    value={formData.indirizzo_partenza}
+                    onChange={(e) => setFormData(prev => ({ ...prev, indirizzo_partenza: e.target.value }))}
+                    placeholder="Indirizzo completo di partenza"
+                    required
+                    className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                    data-testid="rimborso-partenza-input"
+                  />
+                )}
               </div>
 
+              {/* Indirizzo Arrivo */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Destinazione *</label>
                 <input
                   type="text"
                   value={formData.indirizzo_arrivo}
                   onChange={(e) => setFormData(prev => ({ ...prev, indirizzo_arrivo: e.target.value }))}
-                  placeholder="Indirizzo di destinazione"
+                  placeholder="Indirizzo completo di destinazione"
                   required
                   className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
                   data-testid="rimborso-arrivo-input"
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">KM Andata *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={formData.km_andata}
-                    onChange={(e) => setFormData(prev => ({ ...prev, km_andata: parseFloat(e.target.value) || 0 }))}
-                    required
-                    className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
-                    data-testid="rimborso-km-input"
-                  />
+              {/* Calcolo KM */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-gray-700">Calcolo Chilometri</span>
+                  <button
+                    type="button"
+                    onClick={calcolaKm}
+                    disabled={calcolandoKm || !formData.indirizzo_partenza || !formData.indirizzo_arrivo}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#1E4D8C] hover:bg-[#163A6A] text-white text-sm rounded-md disabled:opacity-50"
+                    data-testid="calcola-km-btn"
+                  >
+                    <MapPin size={14} />
+                    {calcolandoKm ? 'Calcolo...' : 'Calcola con Google Maps'}
+                  </button>
                 </div>
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">KM Andata</label>
                     <input
-                      type="checkbox"
-                      checked={formData.andata_ritorno}
-                      onChange={(e) => setFormData(prev => ({ ...prev, andata_ritorno: e.target.checked }))}
-                      className="rounded text-[#1E4D8C]"
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={formData.km_andata}
+                      onChange={(e) => handleKmChange(e.target.value)}
+                      required
+                      className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                      data-testid="rimborso-km-input"
                     />
-                    <span className="text-sm">Andata e Ritorno</span>
-                  </label>
+                    {formData.km_modificati_manualmente && (
+                      <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                        <AlertTriangle size={12} />
+                        KM modificati manualmente (verrà notificato all'admin)
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-end pb-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.andata_ritorno}
+                        onChange={(e) => setFormData(prev => ({ ...prev, andata_ritorno: e.target.checked }))}
+                        className="rounded text-[#1E4D8C]"
+                      />
+                      <span className="text-sm">Andata e Ritorno</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
+              {/* Autostrada */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="flex items-center gap-2 mb-2">
                     <input
                       type="checkbox"
                       checked={formData.uso_autostrada}
-                      onChange={(e) => setFormData(prev => ({ ...prev, uso_autostrada: e.target.checked, costo_autostrada: e.target.checked ? prev.costo_autostrada : 0 }))}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        uso_autostrada: e.target.checked, 
+                        costo_autostrada: e.target.checked ? prev.costo_autostrada : 0 
+                      }))}
                       className="rounded text-[#1E4D8C]"
                     />
                     <span className="text-sm font-medium text-gray-700">Uso Autostrada</span>
@@ -358,43 +464,70 @@ export default function RimborsiPage() {
                       min="0"
                       value={formData.costo_autostrada}
                       onChange={(e) => setFormData(prev => ({ ...prev, costo_autostrada: parseFloat(e.target.value) || 0 }))}
-                      placeholder="Costo pedaggi"
+                      placeholder="Costo pedaggi €"
                       className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
                       data-testid="rimborso-autostrada-input"
                     />
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Numero Pasti</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.numero_pasti}
-                    onChange={(e) => setFormData(prev => ({ ...prev, numero_pasti: parseInt(e.target.value) || 0 }))}
-                    className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
-                    data-testid="rimborso-pasti-input"
-                  />
-                </div>
               </div>
 
+              {/* Pasti */}
+              <div className="border-t border-gray-200 pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Spese Pasti</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Importo Totale Pasti (€)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.importo_pasti}
+                      onChange={(e) => setFormData(prev => ({ ...prev, importo_pasti: parseFloat(e.target.value) || 0 }))}
+                      placeholder="0.00"
+                      className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                      data-testid="rimborso-importo-pasti-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Numero Partecipanti</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.numero_partecipanti_pasto}
+                      onChange={(e) => setFormData(prev => ({ ...prev, numero_partecipanti_pasto: parseInt(e.target.value) || 0 }))}
+                      placeholder="0"
+                      className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                      data-testid="rimborso-partecipanti-input"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Ricorda di caricare la ricevuta dopo aver creato il rimborso</p>
+              </div>
+
+              {/* Note */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Note {selectedMotivo?.richiede_note && <span className="text-red-500">*</span>}
+                </label>
                 <textarea
                   value={formData.note}
                   onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
-                  rows={2}
+                  required={selectedMotivo?.richiede_note}
+                  rows={3}
+                  placeholder={selectedMotivo?.richiede_note ? 'Note obbligatorie per questo motivo' : 'Note aggiuntive (opzionale)'}
                   className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none resize-none"
                   data-testid="rimborso-note-input"
                 />
               </div>
 
               {/* Preview */}
-              <div className="bg-blue-50 rounded-lg p-4">
+              <div className="bg-green-50 rounded-lg p-4">
                 <p className="text-sm text-gray-600">Importo stimato:</p>
                 <p className="text-2xl font-bold text-[#1E4D8C]">{formatCurrency(calcImportoPreview())}</p>
                 <p className="text-xs text-gray-500 mt-1">
                   {formData.km_andata * (formData.andata_ritorno ? 2 : 1)} km × €0.35 = {formatCurrency(formData.km_andata * (formData.andata_ritorno ? 2 : 1) * 0.35)}
-                  {formData.numero_pasti > 0 && ` + ${formData.numero_pasti} pasti = ${formatCurrency(formData.numero_pasti * 15)}`}
+                  {formData.importo_pasti > 0 && ` + pasti = ${formatCurrency(formData.importo_pasti)}`}
                   {formData.uso_autostrada && formData.costo_autostrada > 0 && ` + autostrada = ${formatCurrency(formData.costo_autostrada)}`}
                 </p>
               </div>
@@ -429,14 +562,43 @@ export default function RimborsiPage() {
           onClose={() => setShowDetailModal(null)}
           onUpdateStato={handleUpdateStato}
           onUploadContabile={handleUploadContabile}
+          onRefresh={fetchData}
         />
       )}
     </div>
   );
 }
 
-function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUploadContabile }) {
+function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUploadContabile, onRefresh }) {
   const [contabileFile, setContabileFile] = useState(null);
+  const [uploadingSpesa, setUploadingSpesa] = useState(false);
+  const [spesaFile, setSpesaFile] = useState(null);
+  const [spesaTipo, setSpesaTipo] = useState('pasto');
+  const [spesaDescrizione, setSpesaDescrizione] = useState('');
+
+  const handleUploadSpesa = async () => {
+    if (!spesaFile) return;
+    setUploadingSpesa(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', spesaFile);
+      formData.append('tipo', spesaTipo);
+      formData.append('descrizione', spesaDescrizione);
+      
+      await axios.post(`${API}/rimborsi/${rimborso.id}/ricevute-spese`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      setSpesaFile(null);
+      setSpesaDescrizione('');
+      onRefresh();
+    } catch (error) {
+      console.error('Error uploading spesa:', error);
+      alert(error.response?.data?.detail || 'Errore durante il caricamento');
+    } finally {
+      setUploadingSpesa(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -447,7 +609,20 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
             <X size={20} />
           </button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Alert KM modificati */}
+          {rimborso.km_modificati_manualmente && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle size={18} className="text-orange-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-orange-800">KM modificati manualmente</p>
+                <p className="text-xs text-orange-600">
+                  Calcolati: {rimborso.km_calcolati || 'N/A'} km | Inseriti: {rimborso.km_andata} km
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-500">Data</p>
@@ -487,9 +662,9 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
               <span className="text-gray-600">Rimborso KM</span>
               <span className="font-medium">{formatCurrency(rimborso.importo_km)}</span>
             </div>
-            {rimborso.numero_pasti > 0 && (
+            {rimborso.importo_pasti > 0 && (
               <div className="flex justify-between items-center mt-2">
-                <span className="text-gray-600">Pasti ({rimborso.numero_pasti})</span>
+                <span className="text-gray-600">Pasti ({rimborso.numero_partecipanti_pasto || 0} pers.)</span>
                 <span className="font-medium">{formatCurrency(rimborso.importo_pasti)}</span>
               </div>
             )}
@@ -509,6 +684,61 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-sm text-gray-500 mb-1">Note</p>
               <p className="text-sm">{rimborso.note}</p>
+            </div>
+          )}
+
+          {/* Ricevute spese */}
+          {rimborso.ricevute_spese && rimborso.ricevute_spese.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Ricevute Spese</p>
+              <div className="space-y-2">
+                {rimborso.ricevute_spese.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm bg-gray-50 px-3 py-2 rounded">
+                    <FileText size={14} className="text-gray-400" />
+                    <span className="capitalize">{r.tipo}</span>
+                    {r.descrizione && <span className="text-gray-500">- {r.descrizione}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Upload ricevuta spesa (solo se in_attesa e proprietario) */}
+          {rimborso.stato === 'in_attesa' && (
+            <div className="border-t border-gray-200 pt-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Carica Ricevuta Spesa</p>
+              <div className="space-y-2">
+                <select
+                  value={spesaTipo}
+                  onChange={(e) => setSpesaTipo(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                >
+                  <option value="pasto">Pasto</option>
+                  <option value="altro">Altro</option>
+                </select>
+                <input
+                  type="text"
+                  value={spesaDescrizione}
+                  onChange={(e) => setSpesaDescrizione(e.target.value)}
+                  placeholder="Descrizione (opzionale)"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                />
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    onChange={(e) => setSpesaFile(e.target.files?.[0] || null)}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    className="flex-1 text-sm"
+                  />
+                  <button
+                    onClick={handleUploadSpesa}
+                    disabled={!spesaFile || uploadingSpesa}
+                    className="px-3 py-2 bg-[#1E4D8C] text-white text-sm rounded-md disabled:opacity-50"
+                  >
+                    <Upload size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

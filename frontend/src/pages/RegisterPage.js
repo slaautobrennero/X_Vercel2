@@ -29,15 +29,17 @@ export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const isDelegato = formData.ruolo === 'delegato';
+
   useEffect(() => {
-    // Fetch sedi for dropdown
     axios.get(`${API}/sedi`)
       .then(res => setSedi(res.data))
       .catch(() => {});
   }, []);
 
   const handleChange = (e) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -54,10 +56,29 @@ export default function RegisterPage() {
       return;
     }
 
+    // Validate required fields for delegato
+    if (isDelegato) {
+      if (!formData.indirizzo) {
+        setError('Indirizzo obbligatorio per i delegati');
+        return;
+      }
+      if (!formData.iban) {
+        setError('IBAN obbligatorio per i delegati');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
       const { confirmPassword, ...registerData } = formData;
+      // Remove address/iban fields for iscritto
+      if (!isDelegato) {
+        delete registerData.indirizzo;
+        delete registerData.citta;
+        delete registerData.cap;
+        delete registerData.iban;
+      }
       await register(registerData);
       navigate('/');
     } catch (err) {
@@ -194,7 +215,7 @@ export default function RegisterPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ruolo</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ruolo *</label>
                 <select
                   name="ruolo"
                   value={formData.ruolo}
@@ -205,6 +226,9 @@ export default function RegisterPage() {
                   <option value="iscritto">Iscritto</option>
                   <option value="delegato">Delegato</option>
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {isDelegato ? 'I delegati possono richiedere rimborsi' : 'Gli iscritti possono consultare bacheca e documenti'}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
@@ -219,56 +243,67 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Indirizzo</label>
-              <input
-                type="text"
-                name="indirizzo"
-                value={formData.indirizzo}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
-                placeholder="Via/Piazza"
-                data-testid="register-indirizzo-input"
-              />
-            </div>
+            {/* Campi visibili solo per delegati */}
+            {isDelegato && (
+              <>
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <p className="text-sm font-medium text-[#1E4D8C] mb-3">Dati per rimborsi (obbligatori per delegati)</p>
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Città</label>
-                <input
-                  type="text"
-                  name="citta"
-                  value={formData.citta}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
-                  data-testid="register-citta-input"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CAP</label>
-                <input
-                  type="text"
-                  name="cap"
-                  value={formData.cap}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
-                  data-testid="register-cap-input"
-                />
-              </div>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Indirizzo *</label>
+                  <input
+                    type="text"
+                    name="indirizzo"
+                    value={formData.indirizzo}
+                    onChange={handleChange}
+                    required={isDelegato}
+                    className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
+                    placeholder="Via/Piazza e numero civico"
+                    data-testid="register-indirizzo-input"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
-              <input
-                type="text"
-                name="iban"
-                value={formData.iban}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
-                placeholder="IT..."
-                data-testid="register-iban-input"
-              />
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Città</label>
+                    <input
+                      type="text"
+                      name="citta"
+                      value={formData.citta}
+                      onChange={handleChange}
+                      className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
+                      data-testid="register-citta-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CAP</label>
+                    <input
+                      type="text"
+                      name="cap"
+                      value={formData.cap}
+                      onChange={handleChange}
+                      className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
+                      data-testid="register-cap-input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">IBAN *</label>
+                  <input
+                    type="text"
+                    name="iban"
+                    value={formData.iban}
+                    onChange={handleChange}
+                    required={isDelegato}
+                    className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
+                    placeholder="IT..."
+                    data-testid="register-iban-input"
+                  />
+                </div>
+              </>
+            )}
 
             <button
               type="submit"

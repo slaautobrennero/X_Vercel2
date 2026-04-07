@@ -5,7 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -15,11 +15,14 @@ import bcrypt
 import jwt
 import secrets
 import aiofiles
+import httpx
+import io
+import csv
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 import uuid
-import shutil
+import math
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -29,6 +32,9 @@ db = client[os.environ['DB_NAME']]
 # JWT Config
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
+
+# Google Maps
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
 # Create the main app
 app = FastAPI(title="SLA Sindacato - Portale Rimborsi")
@@ -57,7 +63,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     sede_id: Optional[str] = None
-    ruolo: str = "iscritto"  # iscritto, delegato, segreteria, segretario, admin, superuser, superadmin
+    ruolo: str = "iscritto"
 
 class UserUpdate(BaseModel):
     nome: Optional[str] = None
@@ -105,23 +111,35 @@ class SedeUpdate(BaseModel):
 class MotivoRimborsoCreate(BaseModel):
     nome: str
     descrizione: Optional[str] = None
+    richiede_note: bool = False
+
+class MotivoRimborsoUpdate(BaseModel):
+    nome: Optional[str] = None
+    descrizione: Optional[str] = None
+    richiede_note: Optional[bool] = None
 
 class RimborsoCreate(BaseModel):
     data: str
     motivo_id: str
     indirizzo_partenza: str
-    indirizzo_partenza_tipo: str = "manuale"  # casa, manuale
+    indirizzo_partenza_tipo: str = "manuale"
     indirizzo_arrivo: str
     km_andata: float
+    km_calcolati: Optional[float] = None  # KM calcolati da Google Maps
+    km_modificati_manualmente: bool = False
     andata_ritorno: bool = True
     uso_autostrada: bool = False
     costo_autostrada: float = 0
-    numero_pasti: int = 0
+    # Pasti
+    importo_pasti: float = 0
+    numero_partecipanti_pasto: int = 0
+    # Note
     note: Optional[str] = None
 
 class RimborsoUpdate(BaseModel):
-    stato: Optional[str] = None  # in_attesa, approvato, rifiutato, pagato
+    stato: Optional[str] = None
     note_admin: Optional[str] = None
+    km_approvati: Optional[bool] = None
 
 class AnnuncioCreate(BaseModel):
     titolo: str
@@ -130,8 +148,12 @@ class AnnuncioCreate(BaseModel):
 
 class DocumentoCreate(BaseModel):
     nome: str
-    categoria: str  # modulistica, documento, altro
+    categoria: str
     descrizione: Optional[str] = None
+
+class CalcoloKmRequest(BaseModel):
+    origine: str
+    destinazione: str
 
 # ==================== AUTH HELPERS ====================
 
@@ -178,7 +200,6 @@ async def get_current_user(request: Request) -> dict:
         user["id"] = str(user["_id"])
         user.pop("_id", None)
         user.pop("password_hash", None)
-        # Get sede name
         if user.get("sede_id"):
             sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
             if sede:
@@ -189,14 +210,6 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
 
-def require_roles(*roles):
-    async def role_checker(request: Request):
-        user = await get_current_user(request)
-        if user["ruolo"] not in roles and user["ruolo"] not in ["superadmin", "admin"]:
-            raise HTTPException(status_code=403, detail="Permessi insufficienti")
-        return user
-    return role_checker
-
 # ==================== AUTH ROUTES ====================
 
 @api_router.post("/auth/register")
@@ -206,11 +219,22 @@ async def register(user_data: UserCreate, response: Response):
     if existing:
         raise HTTPException(status_code=400, detail="Email già registrata")
     
+    # Only allow iscritto or delegato for self-registration
+    allowed_roles = ["iscritto", "delegato"]
+    ruolo = user_data.ruolo if user_data.ruolo in allowed_roles else "iscritto"
+    
     # Validate sede exists if provided
     if user_data.sede_id:
         sede = await db.sedi.find_one({"_id": ObjectId(user_data.sede_id)})
         if not sede:
             raise HTTPException(status_code=400, detail="Sede non trovata")
+    
+    # For delegato, indirizzo and iban are required
+    if ruolo == "delegato":
+        if not user_data.indirizzo:
+            raise HTTPException(status_code=400, detail="Indirizzo obbligatorio per i delegati")
+        if not user_data.iban:
+            raise HTTPException(status_code=400, detail="IBAN obbligatorio per i delegati")
     
     user_doc = {
         "email": email,
@@ -218,11 +242,11 @@ async def register(user_data: UserCreate, response: Response):
         "nome": user_data.nome,
         "cognome": user_data.cognome,
         "telefono": user_data.telefono,
-        "indirizzo": user_data.indirizzo,
-        "citta": user_data.citta,
-        "cap": user_data.cap,
-        "iban": user_data.iban,
-        "ruolo": user_data.ruolo if user_data.ruolo in ["iscritto", "delegato"] else "iscritto",
+        "indirizzo": user_data.indirizzo if ruolo != "iscritto" else None,
+        "citta": user_data.citta if ruolo != "iscritto" else None,
+        "cap": user_data.cap if ruolo != "iscritto" else None,
+        "iban": user_data.iban if ruolo != "iscritto" else None,
+        "ruolo": ruolo,
         "sede_id": user_data.sede_id,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -247,7 +271,6 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
     email = login_data.email.lower()
     identifier = f"{request.client.host}:{email}"
     
-    # Check brute force
     attempts = await db.login_attempts.find_one({"identifier": identifier})
     if attempts and attempts.get("count", 0) >= 5:
         lockout_time = attempts.get("last_attempt")
@@ -258,7 +281,6 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
     
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(login_data.password, user["password_hash"]):
-        # Increment failed attempts
         await db.login_attempts.update_one(
             {"identifier": identifier},
             {"$inc": {"count": 1}, "$set": {"last_attempt": datetime.now(timezone.utc).isoformat()}},
@@ -266,7 +288,6 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
         )
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     
-    # Clear failed attempts
     await db.login_attempts.delete_one({"identifier": identifier})
     
     user_id = str(user["_id"])
@@ -330,11 +351,49 @@ async def refresh_token(request: Request, response: Response):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
 
+# ==================== GOOGLE MAPS ====================
+
+@api_router.post("/calcola-km")
+async def calcola_km(data: CalcoloKmRequest, request: Request):
+    await get_current_user(request)
+    
+    if not GOOGLE_MAPS_API_KEY:
+        raise HTTPException(status_code=500, detail="Google Maps API non configurata")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://maps.googleapis.com/maps/api/directions/json",
+                params={
+                    "origin": data.origine,
+                    "destination": data.destinazione,
+                    "key": GOOGLE_MAPS_API_KEY,
+                    "language": "it"
+                }
+            )
+            result = response.json()
+            
+            if result.get("status") != "OK":
+                raise HTTPException(status_code=400, detail=f"Impossibile calcolare il percorso: {result.get('status')}")
+            
+            # Get distance in meters and convert to km, round up
+            distance_meters = result["routes"][0]["legs"][0]["distance"]["value"]
+            distance_km = math.ceil(distance_meters / 1000)
+            
+            return {
+                "km": distance_km,
+                "origine": result["routes"][0]["legs"][0]["start_address"],
+                "destinazione": result["routes"][0]["legs"][0]["end_address"],
+                "durata": result["routes"][0]["legs"][0]["duration"]["text"]
+            }
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Errore di connessione: {str(e)}")
+
 # ==================== SEDI ROUTES ====================
 
 @api_router.get("/sedi")
 async def get_sedi(request: Request):
-    user = await get_current_user(request)
+    # Allow unauthenticated access for registration
     sedi = []
     async for sede in db.sedi.find({}, {"_id": 1, "nome": 1, "codice": 1, "indirizzo": 1, "tariffa_km": 1, "rimborso_pasti": 1, "rimborso_autostrada": 1}):
         sede["id"] = str(sede["_id"])
@@ -410,12 +469,13 @@ async def get_motivi_rimborso(request: Request):
 @api_router.post("/motivi-rimborso")
 async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin", "admin"]:
-        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    if user["ruolo"] not in ["superadmin"]:
+        raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
     
     motivo_doc = {
         "nome": motivo_data.nome,
         "descrizione": motivo_data.descrizione,
+        "richiede_note": motivo_data.richiede_note,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -424,11 +484,27 @@ async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Req
     motivo_doc.pop("_id", None)
     return motivo_doc
 
+@api_router.put("/motivi-rimborso/{motivo_id}")
+async def update_motivo_rimborso(motivo_id: str, motivo_data: MotivoRimborsoUpdate, request: Request):
+    user = await get_current_user(request)
+    if user["ruolo"] not in ["superadmin"]:
+        raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
+    
+    update_data = {k: v for k, v in motivo_data.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nessun dato da aggiornare")
+    
+    result = await db.motivi_rimborso.update_one({"_id": ObjectId(motivo_id)}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Motivo non trovato")
+    
+    return {"message": "Motivo aggiornato"}
+
 @api_router.delete("/motivi-rimborso/{motivo_id}")
 async def delete_motivo_rimborso(motivo_id: str, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin", "admin"]:
-        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    if user["ruolo"] not in ["superadmin"]:
+        raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
     
     result = await db.motivi_rimborso.delete_one({"_id": ObjectId(motivo_id)})
     if result.deleted_count == 0:
@@ -444,7 +520,6 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     
     query = {}
     
-    # Filter by sede for non-superadmin/superuser
     if user["ruolo"] not in ["superadmin", "superuser"]:
         if user["ruolo"] == "admin":
             query["sede_id"] = user.get("sede_id")
@@ -462,12 +537,10 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
         rimborso["id"] = str(rimborso["_id"])
         rimborso.pop("_id")
         
-        # Get user info
         rimborso_user = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])})
         if rimborso_user:
             rimborso["user_nome"] = f"{rimborso_user['nome']} {rimborso_user['cognome']}"
         
-        # Get motivo info
         if rimborso.get("motivo_id"):
             motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso["motivo_id"])})
             if motivo:
@@ -484,19 +557,23 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     if user["ruolo"] not in ["delegato", "segreteria", "segretario", "admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Gli iscritti non possono richiedere rimborsi")
     
+    # Check if motivo requires note
+    motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso_data.motivo_id)})
+    if motivo and motivo.get("richiede_note") and not rimborso_data.note:
+        raise HTTPException(status_code=400, detail="Per questo motivo le note sono obbligatorie")
+    
     # Get sede tariffs
     sede = None
     if user.get("sede_id"):
         sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
     
     tariffa_km = sede["tariffa_km"] if sede else 0.35
-    rimborso_pasti = sede["rimborso_pasti"] if sede else 15.0
     
     # Calculate totals
     km_totali = rimborso_data.km_andata * (2 if rimborso_data.andata_ritorno else 1)
     importo_km = km_totali * tariffa_km
-    importo_pasti = rimborso_data.numero_pasti * rimborso_pasti
     importo_autostrada = rimborso_data.costo_autostrada if rimborso_data.uso_autostrada else 0
+    importo_pasti = rimborso_data.importo_pasti
     importo_totale = importo_km + importo_pasti + importo_autostrada
     
     rimborso_doc = {
@@ -508,18 +585,22 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
         "indirizzo_partenza_tipo": rimborso_data.indirizzo_partenza_tipo,
         "indirizzo_arrivo": rimborso_data.indirizzo_arrivo,
         "km_andata": rimborso_data.km_andata,
+        "km_calcolati": rimborso_data.km_calcolati,
+        "km_modificati_manualmente": rimborso_data.km_modificati_manualmente,
         "andata_ritorno": rimborso_data.andata_ritorno,
         "km_totali": km_totali,
         "uso_autostrada": rimborso_data.uso_autostrada,
         "costo_autostrada": importo_autostrada,
-        "numero_pasti": rimborso_data.numero_pasti,
+        "importo_pasti": importo_pasti,
+        "numero_partecipanti_pasto": rimborso_data.numero_partecipanti_pasto,
         "tariffa_km": tariffa_km,
         "importo_km": importo_km,
-        "importo_pasti": importo_pasti,
         "importo_totale": importo_totale,
         "note": rimborso_data.note,
         "stato": "in_attesa",
         "ricevute": [],
+        "ricevute_spese": [],
+        "km_approvati": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -528,12 +609,18 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     rimborso_doc.pop("_id", None)
     
     # Create notification for admin
+    notifica_msg = f"{user['nome']} {user['cognome']} ha inviato una richiesta di rimborso di €{importo_totale:.2f}"
+    if rimborso_data.km_modificati_manualmente:
+        notifica_msg += " - ATTENZIONE: KM modificati manualmente!"
+    
     await db.notifiche.insert_one({
         "user_id": None,
         "sede_id": user.get("sede_id"),
         "tipo": "rimborso",
-        "titolo": "Nuova richiesta rimborso",
-        "messaggio": f"{user['nome']} {user['cognome']} ha inviato una richiesta di rimborso di €{importo_totale:.2f}",
+        "titolo": "Nuova richiesta rimborso" + (" ⚠️ KM MODIFICATI" if rimborso_data.km_modificati_manualmente else ""),
+        "messaggio": notifica_msg,
+        "rimborso_id": str(result.inserted_id),
+        "alert_km": rimborso_data.km_modificati_manualmente,
         "letto": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     })
@@ -551,16 +638,13 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
-    # Validate file
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato. Usa PDF, JPG o PNG")
     
-    # Check file size (5MB max)
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
     
-    # Save file
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"{file_id}.{ext}"
@@ -569,7 +653,6 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
     
-    # Update rimborso
     ricevuta = {
         "id": file_id,
         "filename": file.filename,
@@ -584,6 +667,49 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     
     return ricevuta
 
+@api_router.post("/rimborsi/{rimborso_id}/ricevute-spese")
+async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: UploadFile = File(...), tipo: str = Form(...), descrizione: str = Form(None)):
+    """Upload ricevuta spesa (pasto, altro)"""
+    user = await get_current_user(request)
+    
+    rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
+    if not rimborso:
+        raise HTTPException(status_code=404, detail="Rimborso non trovato")
+    
+    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    
+    if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=400, detail="Formato file non supportato")
+    
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
+    
+    file_id = str(uuid.uuid4())
+    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    filename = f"spesa_{file_id}.{ext}"
+    filepath = UPLOAD_DIR / filename
+    
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(content)
+    
+    ricevuta_spesa = {
+        "id": file_id,
+        "filename": file.filename,
+        "path": filename,
+        "tipo": tipo,
+        "descrizione": descrizione,
+        "uploaded_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.rimborsi.update_one(
+        {"_id": ObjectId(rimborso_id)},
+        {"$push": {"ricevute_spese": ricevuta_spesa}}
+    )
+    
+    return ricevuta_spesa
+
 @api_router.put("/rimborsi/{rimborso_id}")
 async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, request: Request):
     user = await get_current_user(request)
@@ -595,7 +721,6 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    # Check sede permission for admin
     if user["ruolo"] == "admin" and rimborso.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
@@ -607,7 +732,6 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     
     await db.rimborsi.update_one({"_id": ObjectId(rimborso_id)}, {"$set": update_data})
     
-    # Notify user
     stato_msg = {
         "approvato": "approvata",
         "rifiutato": "rifiutata",
@@ -637,7 +761,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    # Save file
     content = await file.read()
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
@@ -647,7 +770,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
     
-    # Update rimborso
     await db.rimborsi.update_one(
         {"_id": ObjectId(rimborso_id)},
         {"$set": {
@@ -657,7 +779,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
         }}
     )
     
-    # Notify user
     await db.notifiche.insert_one({
         "user_id": rimborso["user_id"],
         "sede_id": rimborso.get("sede_id"),
@@ -680,7 +801,7 @@ async def get_annunci(request: Request):
     if user["ruolo"] not in ["superadmin", "superuser"]:
         query["$or"] = [
             {"sede_id": user.get("sede_id")},
-            {"sede_id": None}  # Global announcements
+            {"sede_id": None}
         ]
     
     annunci = []
@@ -764,7 +885,6 @@ async def upload_documento(
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
-    # Validate file
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato")
     
@@ -772,7 +892,6 @@ async def upload_documento(
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
     
-    # Save file
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"doc_{file_id}.{ext}"
@@ -806,7 +925,6 @@ async def download_documento(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento non trovato")
     
-    # Check permission
     if user["ruolo"] not in ["superadmin", "superuser"]:
         if doc.get("sede_id") and doc["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
@@ -828,7 +946,6 @@ async def delete_documento(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento non trovato")
     
-    # Delete file
     filepath = UPLOAD_DIR / doc["path"]
     if filepath.exists():
         filepath.unlink()
@@ -916,7 +1033,6 @@ async def get_users(request: Request):
 async def update_user(user_id: str, user_data: UserUpdate, request: Request):
     current_user = await get_current_user(request)
     
-    # Users can update themselves, or admin can update others
     if user_id != current_user["id"] and current_user["ruolo"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
@@ -977,20 +1093,68 @@ async def get_report_rimborsi_annuali(request: Request, anno: int):
         if user_doc:
             result["user_nome"] = f"{user_doc['nome']} {user_doc['cognome']}"
             result["user_email"] = user_doc["email"]
+            result["user_iban"] = user_doc.get("iban", "")
         results.append(result)
     
     return results
+
+@api_router.get("/reports/rimborsi-export")
+async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
+    user = await get_current_user(request)
+    
+    if user["ruolo"] not in ["admin", "superadmin", "superuser"]:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    query = {"data": {"$regex": f"^{anno}"}}
+    if user["ruolo"] not in ["superadmin", "superuser"]:
+        query["sede_id"] = user.get("sede_id")
+    
+    rimborsi = []
+    async for rimborso in db.rimborsi.find(query).sort("data", 1):
+        rimborso_user = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])})
+        motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso["motivo_id"])}) if rimborso.get("motivo_id") else None
+        
+        rimborsi.append({
+            "Data": rimborso["data"],
+            "Utente": f"{rimborso_user['nome']} {rimborso_user['cognome']}" if rimborso_user else "N/A",
+            "Email": rimborso_user["email"] if rimborso_user else "",
+            "IBAN": rimborso_user.get("iban", "") if rimborso_user else "",
+            "Motivo": motivo["nome"] if motivo else "N/A",
+            "Partenza": rimborso["indirizzo_partenza"],
+            "Arrivo": rimborso["indirizzo_arrivo"],
+            "KM Totali": rimborso["km_totali"],
+            "Importo KM": f"{rimborso['importo_km']:.2f}",
+            "Importo Pasti": f"{rimborso.get('importo_pasti', 0):.2f}",
+            "Autostrada": f"{rimborso.get('costo_autostrada', 0):.2f}",
+            "Totale": f"{rimborso['importo_totale']:.2f}",
+            "Stato": rimborso["stato"],
+            "Note": rimborso.get("note", "")
+        })
+    
+    if formato == "csv":
+        output = io.StringIO()
+        if rimborsi:
+            writer = csv.DictWriter(output, fieldnames=rimborsi[0].keys())
+            writer.writeheader()
+            writer.writerows(rimborsi)
+        
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=rimborsi_{anno}.csv"}
+        )
+    else:
+        return rimborsi
 
 # ==================== STARTUP ====================
 
 @app.on_event("startup")
 async def startup():
-    # Create indexes
     await db.users.create_index("email", unique=True)
     await db.sedi.create_index("codice", unique=True)
     await db.login_attempts.create_index("identifier")
     
-    # Seed superadmin
     admin_email = os.environ.get("ADMIN_EMAIL", "superadmin@sla.it")
     admin_password = os.environ.get("ADMIN_PASSWORD", "SlaAdmin2024!")
     
@@ -1014,32 +1178,41 @@ async def startup():
         )
         logger.info("Password SuperAdmin aggiornata")
     
-    # Seed default motivi rimborso
-    motivi_default = ["RSA", "Sede", "Corso di Formazione", "Assemblea", "Riunione", "Altro"]
+    # Seed default motivi rimborso with richiede_note flag
+    motivi_default = [
+        {"nome": "RSA", "richiede_note": False},
+        {"nome": "Sede", "richiede_note": False},
+        {"nome": "Altro", "richiede_note": True}
+    ]
     for motivo in motivi_default:
-        existing_motivo = await db.motivi_rimborso.find_one({"nome": motivo})
+        existing_motivo = await db.motivi_rimborso.find_one({"nome": motivo["nome"]})
         if not existing_motivo:
             await db.motivi_rimborso.insert_one({
-                "nome": motivo,
+                "nome": motivo["nome"],
                 "descrizione": None,
+                "richiede_note": motivo["richiede_note"],
                 "created_at": datetime.now(timezone.utc).isoformat()
             })
     
-    # Seed sample sedi
-    sedi_default = [
-        {"nome": "Autostrada del Brennero A22", "codice": "A22", "tariffa_km": 0.35, "rimborso_pasti": 15.0},
-        {"nome": "Concessioni Autostradali Venete CAV", "codice": "CAV", "tariffa_km": 0.30, "rimborso_pasti": 12.0},
-        {"nome": "Autostrade per l'Italia", "codice": "ASPI", "tariffa_km": 0.40, "rimborso_pasti": 18.0},
-    ]
-    for sede in sedi_default:
-        existing_sede = await db.sedi.find_one({"codice": sede["codice"]})
-        if not existing_sede:
-            sede["indirizzo"] = None
-            sede["rimborso_autostrada"] = True
-            sede["created_at"] = datetime.now(timezone.utc).isoformat()
-            await db.sedi.insert_one(sede)
+    # Remove old motivi that are not in the new list
+    await db.motivi_rimborso.delete_many({"nome": {"$nin": ["RSA", "Sede", "Altro"]}})
     
-    # Write test credentials
+    # Only keep A22 sede
+    await db.sedi.delete_many({"codice": {"$nin": ["A22"]}})
+    
+    # Ensure A22 exists
+    existing_a22 = await db.sedi.find_one({"codice": "A22"})
+    if not existing_a22:
+        await db.sedi.insert_one({
+            "nome": "Autostrada del Brennero",
+            "codice": "A22",
+            "indirizzo": None,
+            "tariffa_km": 0.35,
+            "rimborso_pasti": 15.0,
+            "rimborso_autostrada": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    
     creds_path = Path("/app/memory/test_credentials.md")
     creds_path.parent.mkdir(exist_ok=True)
     creds_path.write_text(f"""# Test Credentials
@@ -1055,18 +1228,24 @@ async def startup():
 - POST /api/auth/logout
 - GET /api/auth/me
 - POST /api/auth/refresh
+
+## Sedi
+- A22 - Autostrada del Brennero
+
+## Motivi Rimborso
+- RSA (note non obbligatorie)
+- Sede (note non obbligatorie)
+- Altro (note OBBLIGATORIE)
 """)
     
-    logger.info("Database inizializzato con dati di esempio")
+    logger.info("Database inizializzato")
 
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
 
-# Include router
 app.include_router(api_router)
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],

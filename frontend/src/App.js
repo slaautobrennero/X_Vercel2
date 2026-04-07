@@ -14,6 +14,8 @@ import NotifichePage from './pages/NotifichePage';
 import UtentiPage from './pages/UtentiPage';
 import SediPage from './pages/SediPage';
 import ProfiloPage from './pages/ProfiloPage';
+import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
+import ReportPage from './pages/ReportPage';
 
 // Layout
 import MainLayout from './layouts/MainLayout';
@@ -96,6 +98,16 @@ function AppRoutes() {
         <Route path="sedi" element={
           <ProtectedRoute allowedRoles={['superadmin']}>
             <SediPage />
+          </ProtectedRoute>
+        } />
+        <Route path="motivi-rimborso" element={
+          <ProtectedRoute allowedRoles={['superadmin']}>
+            <MotiviRimborsoPage />
+          </ProtectedRoute>
+        } />
+        <Route path="report" element={
+          <ProtectedRoute allowedRoles={['admin', 'superadmin', 'superuser']}>
+            <ReportPage />
           </ProtectedRoute>
         } />
         <Route path="profilo" element={<ProfiloPage />} />

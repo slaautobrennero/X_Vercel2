@@ -10,12 +10,12 @@ import {
   Bell, 
   Users, 
   Building2, 
-  Settings, 
   LogOut, 
   Menu, 
-  X,
   ChevronDown,
-  User
+  User,
+  Settings,
+  BarChart3
 } from 'lucide-react';
 
 export default function MainLayout() {
@@ -33,17 +33,19 @@ export default function MainLayout() {
   const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
   const canManageUsers = ['segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
   const canManageSedi = ['superadmin'].includes(user?.ruolo);
-  const canPostAnnunci = ['segreteria', 'segretario', 'admin', 'superadmin'].includes(user?.ruolo);
-  const canUploadDocs = ['segreteria', 'segretario', 'admin', 'superadmin'].includes(user?.ruolo);
+  const canManageMotivi = ['superadmin'].includes(user?.ruolo);
+  const canViewReports = ['admin', 'superadmin', 'superuser'].includes(user?.ruolo);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },
     { path: '/bacheca', label: 'Bacheca', icon: Megaphone, show: true },
     { path: '/documenti', label: 'Documenti', icon: FileText, show: true },
     { path: '/rimborsi', label: 'Rimborsi', icon: Receipt, show: canAccessRimborsi },
+    { path: '/report', label: 'Report', icon: BarChart3, show: canViewReports },
     { path: '/notifiche', label: 'Notifiche', icon: Bell, show: true },
     { path: '/utenti', label: 'Utenti', icon: Users, show: canManageUsers },
     { path: '/sedi', label: 'Sedi', icon: Building2, show: canManageSedi },
+    { path: '/motivi-rimborso', label: 'Motivi Rimborso', icon: Settings, show: canManageMotivi },
   ];
 
   return (
