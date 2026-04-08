@@ -1,100 +1,126 @@
-\"\"\"\n==============================================\nSLA PORTALE - Server FastAPI\n==============================================\n\nEntry point dell'applicazione backend.\nGestisce tutte le API per il portale rimborsi SLA.\n\nPer avviare in sviluppo:\n    uvicorn server:app --reload --port 8001\n\nPer avviare in produzione:\n    uvicorn server:app --host 0.0.0.0 --port 8001\n\nDocumentazione API automatica:\n    http://localhost:8001/docs (Swagger)\n    http://localhost:8001/redoc (ReDoc)\n\n==============================================\n\"\"\"
+"""
+==============================================
+SLA PORTALE - Server FastAPI
+==============================================
 
-# Carica variabili ambiente PRIMA di tutto
+Entry point dell'applicazione backend.
+Gestisce tutte le API per il portale rimborsi del Sindacato Lavoratori Autostradali.
+
+Funzionalità principali:
+- Autenticazione JWT multi-ruolo (7 ruoli)
+- Gestione rimborsi con calcolo KM automatico/manuale
+- Upload documenti e modulistica
+- Bacheca e notifiche
+- Export PDF/Excel rendiconti
+
+Per avviare in sviluppo:
+    uvicorn server:app --reload --port 8001
+
+Documentazione API automatica:
+    http://localhost:8001/docs (Swagger)
+    http://localhost:8001/redoc (ReDoc)
+
+==============================================
+"""
+
+# ==================== IMPORTS ====================
+
+# Environment variables - Load FIRST before other imports
 from dotenv import load_dotenv
 from pathlib import Path
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Import standard library
-import os
-import logging
-from datetime import datetime, timezone, timedelta
-import uuid
-import math
-import csv
-import io
-
-# Import FastAPI
+# FastAPI framework
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 
-# Import database
+# Database - MongoDB async driver
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 
-# Import security
-import bcrypt
-import jwt
-import httpx
-import aiofiles
+# Standard library
+import os
+import logging
+import secrets
+import io
+import csv
+import uuid
+import math
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
 
-# ==============================================
-# CONFIGURAZIONE
-# ==============================================
+# Security & External APIs
+import bcrypt  # Password hashing
+import jwt     # JSON Web Tokens
+import aiofiles  # Async file operations
+import httpx   # HTTP client for Google Maps API
 
-# MongoDB
-MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-DB_NAME = os.environ.get('DB_NAME', 'sla_sindacato')
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
+# Data validation
+from pydantic import BaseModel, Field, EmailStr
 
-# JWT
-JWT_SECRET = os.environ.get('JWT_SECRET', 'CAMBIA-QUESTA-CHIAVE')
+# ==================== CONFIGURAZIONE ====================
+
+# MongoDB - Database NoSQL per tutti i dati
+# NOTA: MONGO_URL viene da /app/backend/.env
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
+
+# JWT - Autenticazione con JSON Web Tokens
+# NOTA: JWT_SECRET deve essere una chiave segreta robusta in produzione
+JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 
-# Google Maps
+# Google Maps API - Calcolo chilometri automatico
+# NOTA: Richiede API "Directions" abilitata su Google Cloud Console
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
-# Upload
-UPLOAD_DIR = ROOT_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-
-# Logging
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# ==============================================
-# APP FASTAPI
-# ==============================================
-
+# FastAPI App - Applicazione principale
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
-    description="API per gestione rimborsi e comunicazioni SLA",
+    description="Gestione rimborsi e documenti per 30 concessionarie autostradali",
     version="1.0.0"
 )
+api_router = APIRouter(prefix="/api")  # Tutti gli endpoint hanno prefisso /api
 
-api_router = APIRouter(prefix="/api")
+# Logging - Per debug e monitoraggio
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# ==============================================
-# MODELLI PYDANTIC
-# ==============================================
-# Definiscono la struttura dei dati in input/output
+# Directory Upload - Per documenti, modulistica e ricevute
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB limite
 
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+# ==================== PYDANTIC MODELS ====================
+# Definiscono la struttura dei dati in input/output delle API
+# Pydantic valida automaticamente i dati e genera documentazione
 
-class UserCreate(BaseModel):
-    """Dati per registrazione utente"""
+# --- USER MODELS (Utenti) ---
+
+class UserBase(BaseModel):
+    """Base user fields - Campi comuni a tutti gli utenti"""
     email: EmailStr
-    password: str
     nome: str
     cognome: str
     telefono: Optional[str] = None
-    indirizzo: Optional[str] = None
+    indirizzo: Optional[str] = None  # NOTA: Non richiesto per ruolo "iscritto"
     citta: Optional[str] = None
     cap: Optional[str] = None
-    iban: Optional[str] = None
-    sede_id: Optional[str] = None
-    ruolo: str = "iscritto"
+    iban: Optional[str] = None  # NOTA: Non richiesto per ruolo "iscritto"
+
+class UserCreate(UserBase):
+    """User registration - Registrazione nuovo utente"""
+    password: str  # Verrà hashato con bcrypt
+    sede_id: Optional[str] = None  # Riferimento alla sede (A22, CAV, etc.)
+    ruolo: str = "iscritto"  # Default: iscritto (accesso solo bacheca/documenti)
+    # Ruoli disponibili: superadmin, superuser, admin, segretario, segreteria, delegato, iscritto
 
 class UserUpdate(BaseModel):
-    """Campi aggiornabili profilo"""
+    """User profile update - Aggiornamento profilo utente"""
     nome: Optional[str] = None
     cognome: Optional[str] = None
     telefono: Optional[str] = None
@@ -103,102 +129,144 @@ class UserUpdate(BaseModel):
     cap: Optional[str] = None
     iban: Optional[str] = None
 
+class UserResponse(BaseModel):
+    """User data response - Dati utente restituiti dalle API (senza password)"""
+    id: str
+    email: str
+    nome: str
+    cognome: str
+    telefono: Optional[str] = None
+    indirizzo: Optional[str] = None
+    citta: Optional[str] = None
+    cap: Optional[str] = None
+    iban: Optional[str] = None
+    ruolo: str
+    sede_id: Optional[str] = None
+    sede_nome: Optional[str] = None
+    created_at: str
+
 class LoginRequest(BaseModel):
-    """Dati login"""
+    """Login credentials - Credenziali per l'accesso"""
     email: EmailStr
     password: str
 
+# --- SEDE MODELS (Sedi/Concessionarie) ---
+
 class SedeCreate(BaseModel):
-    """Crea nuova sede/concessionaria"""
-    nome: str
-    codice: str
+    """Headquarter creation - Creazione nuova sede (A22, CAV, Autostrade, etc.)"""
+    nome: str  # Es: "Autostrada del Brennero"
+    codice: str  # Es: "A22"
     indirizzo: Optional[str] = None
-    tariffa_km: float = 0.35
-    rimborso_pasti: float = 15.0
-    rimborso_autostrada: bool = True
+    tariffa_km: float = 0.35  # €/km - Tariffa chilometrica per rimborsi
+    rimborso_pasti: float = 15.0  # € - Rimborso standard pasti
+    rimborso_autostrada: bool = True  # Se rimborsare i pedaggi
 
 class SedeUpdate(BaseModel):
-    """Aggiorna sede esistente"""
+    """Headquarter update - Aggiornamento dati sede"""
     nome: Optional[str] = None
     indirizzo: Optional[str] = None
     tariffa_km: Optional[float] = None
     rimborso_pasti: Optional[float] = None
     rimborso_autostrada: Optional[bool] = None
 
+# --- RIMBORSO MODELS (Reimbursements) ---
+
 class MotivoRimborsoCreate(BaseModel):
-    """Crea motivo/causale rimborso"""
-    nome: str
+    """Reimbursement reason - Motivo di rimborso (RSA, Sede, Corso, Altro)"""
+    nome: str  # Es: "RSA", "Sede", "Altro"
     descrizione: Optional[str] = None
-    richiede_note: bool = False
+    richiede_note: bool = False  # Se True, le note sono obbligatorie
 
 class MotivoRimborsoUpdate(BaseModel):
-    """Aggiorna motivo esistente"""
+    """Update reimbursement reason - Aggiornamento motivo"""
     nome: Optional[str] = None
     descrizione: Optional[str] = None
     richiede_note: Optional[bool] = None
 
 class RimborsoCreate(BaseModel):
-    \"\"\"
-    Crea nuova richiesta rimborso.
+    """
+    Create reimbursement request - Creazione richiesta rimborso
     
-    Campi principali:
-    - data: Data della trasferta
-    - motivo_id: Riferimento al motivo (RSA, Sede, Altro...)
-    - indirizzo_*: Percorso effettuato
-    - km_*: Chilometri (calcolati o manuali)
-    - importo_pasti: Totale spese pasti
-    \"\"\"
-    data: str
-    motivo_id: str
+    Flusso:
+    1. Utente inserisce partenza/arrivo
+    2. Sistema calcola KM con Google Maps (opzionale)
+    3. Utente può modificare KM manualmente (genera alert per admin)
+    4. Calcolo automatico: (KM * tariffa) + pasti + autostrada
+    """
+    data: str  # Data della trasferta
+    motivo_id: str  # Riferimento al motivo (RSA/Sede/Altro)
+    
+    # Percorso
     indirizzo_partenza: str
-    indirizzo_partenza_tipo: str = "manuale"
+    indirizzo_partenza_tipo: str = "manuale"  # "casa" o "manuale"
     indirizzo_arrivo: str
-    km_andata: float
-    km_calcolati: Optional[float] = None
-    km_modificati_manualmente: bool = False
-    andata_ritorno: bool = True
+    
+    # Chilometri
+    km_andata: float  # KM inseriti dall'utente (calcolati o manuali)
+    km_calcolati: Optional[float] = None  # KM originali da Google Maps (per confronto)
+    km_modificati_manualmente: bool = False  # True se l'utente ha sovrascritto il calcolo
+    andata_ritorno: bool = True  # Se True, KM totali = km_andata * 2
+    
+    # Autostrada
     uso_autostrada: bool = False
-    costo_autostrada: float = 0
-    importo_pasti: float = 0
-    numero_partecipanti_pasto: int = 0
-    note: Optional[str] = None
+    costo_autostrada: float = 0  # Importo pedaggi
+    
+    # Pasti
+    importo_pasti: float = 0  # Totale spese pasti (senza limiti)
+    numero_partecipanti_pasto: int = 0  # Numero persone al pasto
+    
+    # Note
+    note: Optional[str] = None  # OBBLIGATORIE se motivo="Altro"
 
 class RimborsoUpdate(BaseModel):
-    """Aggiorna stato rimborso (solo Admin)"""
-    stato: Optional[str] = None
-    note_admin: Optional[str] = None
-    km_approvati: Optional[bool] = None
+    """Update reimbursement status - Aggiornamento stato rimborso (admin)"""
+    stato: Optional[str] = None  # "in_attesa", "approvato", "rifiutato", "pagato"
+    note_admin: Optional[str] = None  # Motivazione rifiuto o note interne
+    km_approvati: Optional[bool] = None  # Conferma KM se inseriti manualmente
 
-class CalcoloKmRequest(BaseModel):
-    """Richiesta calcolo KM con Google Maps"""
-    origine: str
-    destinazione: str
+# --- COMMUNICATION MODELS (Bacheca/Documenti) ---
 
 class AnnuncioCreate(BaseModel):
-    """Crea annuncio in bacheca"""
+    """Create announcement - Creazione comunicato per bacheca"""
     titolo: str
     contenuto: str
-    link_documento: Optional[str] = None
+    link_documento: Optional[str] = None  # Link a documento allegato
 
-# ==============================================
-# FUNZIONI AUTENTICAZIONE
-# ==============================================
+class DocumentoCreate(BaseModel):
+    """Upload document - Caricamento documento/modulistica"""
+    nome: str  # Nome file
+    categoria: str  # "modulistica", "documento", "altro"
+    descrizione: Optional[str] = None  # Descrizione opzionale
+
+class CalcoloKmRequest(BaseModel):
+    """Google Maps distance request - Richiesta calcolo KM tra due indirizzi"""
+    origine: str  # Indirizzo partenza
+    destinazione: str  # Indirizzo arrivo
+
+# ==================== AUTH HELPERS ====================
+# Funzioni per autenticazione JWT e gestione password
 
 def hash_password(password: str) -> str:
-    """Hash password con bcrypt (salt automatico)"""
+    """
+    Hash password with bcrypt
+    Cripta la password usando bcrypt (algoritmo sicuro con salt)
+    """
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica password contro hash"""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"), 
-        hashed_password.encode("utf-8")
-    )
+    """
+    Verify password against hash
+    Verifica se la password corrisponde all'hash salvato
+    """
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 def create_access_token(user_id: str, email: str) -> str:
-    """Crea JWT access token (durata: 24 ore)"""
+    """
+    Create JWT access token (expires in 24h)
+    Crea token di accesso JWT valido per 24 ore
+    """
     payload = {
         "sub": user_id,
         "email": email,
@@ -208,7 +276,10 @@ def create_access_token(user_id: str, email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def create_refresh_token(user_id: str) -> str:
-    """Crea JWT refresh token (durata: 7 giorni)"""
+    """
+    Create JWT refresh token (expires in 7 days)
+    Crea token di refresh valido per 7 giorni
+    """
     payload = {
         "sub": user_id,
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
@@ -217,93 +288,90 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
-    \"\"\"
-    Middleware: Estrae utente dal token JWT.
+    """
+    Get authenticated user from JWT token
+    Estrae e valida l'utente dal token JWT (cookie o header Authorization)
     
-    Cerca token in:
-    1. Cookie 'access_token'
-    2. Header 'Authorization: Bearer <token>'
-    
-    Solleva HTTPException 401 se non autenticato.
-    \"\"\"
-    # Cerca token
+    Returns: User dict senza password
+    Raises: HTTPException 401 se token mancante/invalido/scaduto
+    """
+    # Try to get token from cookie first
     token = request.cookies.get("access_token")
     if not token:
+        # Fallback to Authorization header
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-    
     if not token:
         raise HTTPException(status_code=401, detail="Non autenticato")
     
     try:
-        # Decodifica JWT
+        # Decode and validate token
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Token non valido")
         
-        # Carica utente
+        # Fetch user from database
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="Utente non trovato")
         
-        # Prepara risposta
+        # Format user data (remove MongoDB _id, add string id)
         user["id"] = str(user["_id"])
         user.pop("_id", None)
-        user.pop("password_hash", None)
+        user.pop("password_hash", None)  # NEVER return password
         
-        # Aggiungi nome sede
+        # Add sede name if user belongs to a sede
         if user.get("sede_id"):
             sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
             if sede:
                 user["sede_nome"] = sede["nome"]
-        
         return user
-        
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token scaduto")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
 
-# ==============================================
-# ROUTE: AUTENTICAZIONE
-# ==============================================
+# ==================== AUTH ROUTES ====================
+# API per registrazione, login, logout e gestione sessioni
 
-@api_router.post("/auth/register", tags=["Autenticazione"])
+@api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response):
-    \"\"\"
-    Registra nuovo utente.
+    """
+    POST /api/auth/register
+    Registrazione nuovo utente
     
-    - Ruoli disponibili in registrazione: iscritto, delegato
-    - Per delegato: indirizzo e IBAN obbligatori
-    - Ruoli superiori assegnati da Admin
-    \"\"\"
+    Regole:
+    - Email univoca
+    - Auto-registrazione solo per "iscritto" o "delegato"
+    - "Iscritto": IBAN e indirizzo NON richiesti
+    - "Delegato": IBAN e indirizzo OBBLIGATORI (per ricevere rimborsi)
+    - Altri ruoli possono essere assegnati solo da admin
+    """
     email = user_data.email.lower()
     
-    # Check email esistente
+    # Check email già registrata
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email già registrata")
     
-    # Valida ruolo (solo iscritto/delegato per auto-registrazione)
+    # Only allow iscritto or delegato for self-registration
     allowed_roles = ["iscritto", "delegato"]
     ruolo = user_data.ruolo if user_data.ruolo in allowed_roles else "iscritto"
     
-    # Valida sede
+    # Validate sede exists if provided
     if user_data.sede_id:
         sede = await db.sedi.find_one({"_id": ObjectId(user_data.sede_id)})
         if not sede:
             raise HTTPException(status_code=400, detail="Sede non trovata")
     
-    # Per delegato: indirizzo e IBAN obbligatori
+    # REGOLA: Delegato DEVE avere IBAN e indirizzo (per rimborsi)
     if ruolo == "delegato":
         if not user_data.indirizzo:
             raise HTTPException(status_code=400, detail="Indirizzo obbligatorio per i delegati")
         if not user_data.iban:
             raise HTTPException(status_code=400, detail="IBAN obbligatorio per i delegati")
     
-    # Crea documento utente
     user_doc = {
         "email": email,
         "password_hash": hash_password(user_data.password),
@@ -322,30 +390,23 @@ async def register(user_data: UserCreate, response: Response):
     result = await db.users.insert_one(user_doc)
     user_id = str(result.inserted_id)
     
-    # Genera token
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
     
-    # Imposta cookie
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
     
     user_doc["id"] = user_id
     user_doc.pop("password_hash")
+    user_doc.pop("_id", None)
+    
     return user_doc
 
-@api_router.post("/auth/login", tags=["Autenticazione"])
+@api_router.post("/auth/login")
 async def login(login_data: LoginRequest, request: Request, response: Response):
-    \"\"\"
-    Login utente.
-    
-    - Protezione brute force: max 5 tentativi, poi blocco 15 minuti
-    - Token salvati in cookie httpOnly
-    \"\"\"
     email = login_data.email.lower()
     identifier = f"{request.client.host}:{email}"
     
-    # Check brute force
     attempts = await db.login_attempts.find_one({"identifier": identifier})
     if attempts and attempts.get("count", 0) >= 5:
         lockout_time = attempts.get("last_attempt")
@@ -354,7 +415,6 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
             if datetime.now(timezone.utc) - lockout_dt < timedelta(minutes=15):
                 raise HTTPException(status_code=429, detail="Troppi tentativi. Riprova tra 15 minuti.")
     
-    # Verifica credenziali
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(login_data.password, user["password_hash"]):
         await db.login_attempts.update_one(
@@ -364,19 +424,15 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
         )
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     
-    # Login OK: reset tentativi
     await db.login_attempts.delete_one({"identifier": identifier})
     
-    # Genera token
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
     
-    # Imposta cookie
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
     
-    # Prepara risposta
     user_response = {
         "id": user_id,
         "email": user["email"],
@@ -399,56 +455,42 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
     
     return user_response
 
-@api_router.post("/auth/logout", tags=["Autenticazione"])
+@api_router.post("/auth/logout")
 async def logout(response: Response):
-    """Logout: elimina cookie di sessione"""
     response.delete_cookie(key="access_token", path="/")
     response.delete_cookie(key="refresh_token", path="/")
     return {"message": "Logout effettuato"}
 
-@api_router.get("/auth/me", tags=["Autenticazione"])
+@api_router.get("/auth/me")
 async def get_me(request: Request):
-    """Ritorna dati utente corrente"""
-    return await get_current_user(request)
+    user = await get_current_user(request)
+    return user
 
-@api_router.post("/auth/refresh", tags=["Autenticazione"])
+@api_router.post("/auth/refresh")
 async def refresh_token(request: Request, response: Response):
-    """Rinnova access token usando refresh token"""
     token = request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(status_code=401, detail="Token di refresh non trovato")
-    
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Token non valido")
-        
         user_id = payload["sub"]
         user = await db.users.find_one({"_id": ObjectId(user_id)})
         if not user:
             raise HTTPException(status_code=401, detail="Utente non trovato")
-        
         access_token = create_access_token(user_id, user["email"])
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
         return {"message": "Token aggiornato"}
-        
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token scaduto")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
 
-# ==============================================
-# ROUTE: GOOGLE MAPS
-# ==============================================
+# ==================== GOOGLE MAPS ====================
 
-@api_router.post("/calcola-km", tags=["Utilità"])
+@api_router.post("/calcola-km")
 async def calcola_km(data: CalcoloKmRequest, request: Request):
-    \"\"\"
-    Calcola distanza KM tra due indirizzi con Google Maps.
-    
-    Richiede GOOGLE_MAPS_API_KEY configurata.
-    KM arrotondati per eccesso al primo intero.
-    \"\"\"
     await get_current_user(request)
     
     if not GOOGLE_MAPS_API_KEY:
@@ -470,6 +512,7 @@ async def calcola_km(data: CalcoloKmRequest, request: Request):
             if result.get("status") != "OK":
                 raise HTTPException(status_code=400, detail=f"Impossibile calcolare il percorso: {result.get('status')}")
             
+            # Get distance in meters and convert to km, round up
             distance_meters = result["routes"][0]["legs"][0]["distance"]["value"]
             distance_km = math.ceil(distance_meters / 1000)
             
@@ -482,13 +525,11 @@ async def calcola_km(data: CalcoloKmRequest, request: Request):
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Errore di connessione: {str(e)}")
 
-# ==============================================
-# ROUTE: SEDI
-# ==============================================
+# ==================== SEDI ROUTES ====================
 
-@api_router.get("/sedi", tags=["Sedi"])
-async def get_sedi():
-    """Lista tutte le sedi (pubblica per registrazione)"""
+@api_router.get("/sedi")
+async def get_sedi(request: Request):
+    # Allow unauthenticated access for registration
     sedi = []
     async for sede in db.sedi.find({}, {"_id": 1, "nome": 1, "codice": 1, "indirizzo": 1, "tariffa_km": 1, "rimborso_pasti": 1, "rimborso_autostrada": 1}):
         sede["id"] = str(sede["_id"])
@@ -496,9 +537,8 @@ async def get_sedi():
         sedi.append(sede)
     return sedi
 
-@api_router.post("/sedi", tags=["Sedi"])
+@api_router.post("/sedi")
 async def create_sede(sede_data: SedeCreate, request: Request):
-    """Crea nuova sede (solo SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin"]:
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può creare sedi")
@@ -522,9 +562,8 @@ async def create_sede(sede_data: SedeCreate, request: Request):
     sede_doc.pop("_id", None)
     return sede_doc
 
-@api_router.put("/sedi/{sede_id}", tags=["Sedi"])
+@api_router.put("/sedi/{sede_id}")
 async def update_sede(sede_id: str, sede_data: SedeUpdate, request: Request):
-    """Aggiorna sede (Admin o SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin", "admin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
@@ -536,11 +575,11 @@ async def update_sede(sede_id: str, sede_data: SedeUpdate, request: Request):
     result = await db.sedi.update_one({"_id": ObjectId(sede_id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Sede non trovata")
+    
     return {"message": "Sede aggiornata"}
 
-@api_router.delete("/sedi/{sede_id}", tags=["Sedi"])
+@api_router.delete("/sedi/{sede_id}")
 async def delete_sede(sede_id: str, request: Request):
-    """Elimina sede (solo SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin"]:
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può eliminare sedi")
@@ -548,15 +587,13 @@ async def delete_sede(sede_id: str, request: Request):
     result = await db.sedi.delete_one({"_id": ObjectId(sede_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Sede non trovata")
+    
     return {"message": "Sede eliminata"}
 
-# ==============================================
-# ROUTE: MOTIVI RIMBORSO
-# ==============================================
+# ==================== MOTIVI RIMBORSO ROUTES ====================
 
-@api_router.get("/motivi-rimborso", tags=["Motivi Rimborso"])
+@api_router.get("/motivi-rimborso")
 async def get_motivi_rimborso(request: Request):
-    """Lista motivi/causali rimborso"""
     await get_current_user(request)
     motivi = []
     async for motivo in db.motivi_rimborso.find({}):
@@ -565,9 +602,8 @@ async def get_motivi_rimborso(request: Request):
         motivi.append(motivo)
     return motivi
 
-@api_router.post("/motivi-rimborso", tags=["Motivi Rimborso"])
+@api_router.post("/motivi-rimborso")
 async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Request):
-    """Crea nuovo motivo (solo SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin"]:
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
@@ -584,9 +620,8 @@ async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Req
     motivo_doc.pop("_id", None)
     return motivo_doc
 
-@api_router.put("/motivi-rimborso/{motivo_id}", tags=["Motivi Rimborso"])
+@api_router.put("/motivi-rimborso/{motivo_id}")
 async def update_motivo_rimborso(motivo_id: str, motivo_data: MotivoRimborsoUpdate, request: Request):
-    """Aggiorna motivo esistente (solo SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin"]:
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
@@ -598,11 +633,11 @@ async def update_motivo_rimborso(motivo_id: str, motivo_data: MotivoRimborsoUpda
     result = await db.motivi_rimborso.update_one({"_id": ObjectId(motivo_id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Motivo non trovato")
+    
     return {"message": "Motivo aggiornato"}
 
-@api_router.delete("/motivi-rimborso/{motivo_id}", tags=["Motivi Rimborso"])
+@api_router.delete("/motivi-rimborso/{motivo_id}")
 async def delete_motivo_rimborso(motivo_id: str, request: Request):
-    """Elimina motivo (solo SuperAdmin)"""
     user = await get_current_user(request)
     if user["ruolo"] not in ["superadmin"]:
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
@@ -610,27 +645,17 @@ async def delete_motivo_rimborso(motivo_id: str, request: Request):
     result = await db.motivi_rimborso.delete_one({"_id": ObjectId(motivo_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Motivo non trovato")
+    
     return {"message": "Motivo eliminato"}
 
-# ==============================================
-# ROUTE: RIMBORSI
-# ==============================================
+# ==================== RIMBORSI ROUTES ====================
 
-@api_router.get("/rimborsi", tags=["Rimborsi"])
+@api_router.get("/rimborsi")
 async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Optional[int] = None):
-    \"\"\"
-    Lista rimborsi.
-    
-    - Iscritti: non vedono nulla
-    - Delegati: vedono solo i propri
-    - Admin: vedono quelli della propria sede
-    - SuperAdmin/SuperUser: vedono tutto
-    \"\"\"
     user = await get_current_user(request)
     
     query = {}
     
-    # Filtro per ruolo
     if user["ruolo"] not in ["superadmin", "superuser"]:
         if user["ruolo"] == "admin":
             query["sede_id"] = user.get("sede_id")
@@ -639,6 +664,7 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     
     if stato:
         query["stato"] = stato
+    
     if anno:
         query["data"] = {"$regex": f"^{anno}"}
     
@@ -647,12 +673,10 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
         rimborso["id"] = str(rimborso["_id"])
         rimborso.pop("_id")
         
-        # Aggiungi nome utente
         rimborso_user = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])})
         if rimborso_user:
             rimborso["user_nome"] = f"{rimborso_user['nome']} {rimborso_user['cognome']}"
         
-        # Aggiungi nome motivo
         if rimborso.get("motivo_id"):
             motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso["motivo_id"])})
             if motivo:
@@ -662,40 +686,47 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     
     return rimborsi
 
-@api_router.post("/rimborsi", tags=["Rimborsi"])
+@api_router.post("/rimborsi")
 async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
-    \"\"\"
-    Crea nuova richiesta rimborso.
+    """
+    POST /api/rimborsi
+    Crea una nuova richiesta di rimborso
     
-    - Solo delegati+ possono richiedere
-    - Se motivo richiede note, sono obbligatorie
-    - Se KM modificati manualmente, admin riceve alert
-    \"\"\"
+    Flusso:
+    1. Verifica permessi (ruolo iscritto NON può creare rimborsi)
+    2. Verifica note obbligatorie se motivo="Altro"
+    3. Calcola totale: (KM * tariffa) + pasti + autostrada
+    4. Crea notifica per admin se KM modificati manualmente
+    
+    Regole speciali:
+    - Se km_modificati_manualmente=True, genera alert per admin
+    - Ricevute pasti: nessun limite di costo (campo importo_pasti libero)
+    """
     user = await get_current_user(request)
     
+    # REGOLA: Solo ruoli con accesso alla sezione rimborsi possono crearli
     if user["ruolo"] not in ["delegato", "segreteria", "segretario", "admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Gli iscritti non possono richiedere rimborsi")
     
-    # Check note obbligatorie
+    # Check if motivo requires note (es: "Altro" richiede sempre note)
     motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso_data.motivo_id)})
     if motivo and motivo.get("richiede_note") and not rimborso_data.note:
         raise HTTPException(status_code=400, detail="Per questo motivo le note sono obbligatorie")
     
-    # Carica tariffe sede
+    # Get sede tariffs (tariffa chilometrica della sede)
     sede = None
     if user.get("sede_id"):
         sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
     
     tariffa_km = sede["tariffa_km"] if sede else 0.35
     
-    # Calcola importi
+    # CALCOLO TOTALE RIMBORSO
     km_totali = rimborso_data.km_andata * (2 if rimborso_data.andata_ritorno else 1)
     importo_km = km_totali * tariffa_km
     importo_autostrada = rimborso_data.costo_autostrada if rimborso_data.uso_autostrada else 0
-    importo_pasti = rimborso_data.importo_pasti
+    importo_pasti = rimborso_data.importo_pasti  # Nessun limite, inserito dall'utente
     importo_totale = importo_km + importo_pasti + importo_autostrada
     
-    # Crea documento
     rimborso_doc = {
         "user_id": user["id"],
         "sede_id": user.get("sede_id"),
@@ -728,7 +759,7 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     rimborso_doc["id"] = str(result.inserted_id)
     rimborso_doc.pop("_id", None)
     
-    # Notifica admin
+    # Create notification for admin
     notifica_msg = f"{user['nome']} {user['cognome']} ha inviato una richiesta di rimborso di €{importo_totale:.2f}"
     if rimborso_data.km_modificati_manualmente:
         notifica_msg += " - ATTENZIONE: KM modificati manualmente!"
@@ -747,9 +778,8 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     
     return rimborso_doc
 
-@api_router.post("/rimborsi/{rimborso_id}/ricevute", tags=["Rimborsi"])
+@api_router.post("/rimborsi/{rimborso_id}/ricevute")
 async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile = File(...)):
-    """Upload ricevuta generica (pedaggi, etc)"""
     user = await get_current_user(request)
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
@@ -759,15 +789,13 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
-    # Valida file
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato. Usa PDF, JPG o PNG")
     
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
     
-    # Salva file
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"{file_id}.{ext}"
@@ -776,7 +804,6 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
     
-    # Aggiorna rimborso
     ricevuta = {
         "id": file_id,
         "filename": file.filename,
@@ -791,19 +818,9 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     
     return ricevuta
 
-@api_router.post("/rimborsi/{rimborso_id}/ricevute-spese", tags=["Rimborsi"])
-async def upload_ricevuta_spesa(
-    rimborso_id: str, 
-    request: Request, 
-    file: UploadFile = File(...), 
-    tipo: str = Form(...), 
-    descrizione: str = Form(None)
-):
-    \"\"\"
-    Upload ricevuta spesa (pasto, altro).
-    
-    Tipi: 'pasto', 'altro'
-    \"\"\"
+@api_router.post("/rimborsi/{rimborso_id}/ricevute-spese")
+async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: UploadFile = File(...), tipo: str = Form(...), descrizione: str = Form(None)):
+    """Upload ricevuta spesa (pasto, altro)"""
     user = await get_current_user(request)
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
@@ -813,15 +830,13 @@ async def upload_ricevuta_spesa(
     if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
-    # Valida file
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato")
     
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
     
-    # Salva
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"spesa_{file_id}.{ext}"
@@ -846,9 +861,8 @@ async def upload_ricevuta_spesa(
     
     return ricevuta_spesa
 
-@api_router.put("/rimborsi/{rimborso_id}", tags=["Rimborsi"])
+@api_router.put("/rimborsi/{rimborso_id}")
 async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, request: Request):
-    """Aggiorna stato rimborso (solo Admin)"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["admin", "superadmin"]:
@@ -858,7 +872,6 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    # Check permessi sede
     if user["ruolo"] == "admin" and rimborso.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
@@ -867,30 +880,29 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
         raise HTTPException(status_code=400, detail="Nessun dato da aggiornare")
     
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
     await db.rimborsi.update_one({"_id": ObjectId(rimborso_id)}, {"$set": update_data})
     
-    # Notifica utente
-    stati_msg = {"approvato": "approvata", "rifiutato": "rifiutata", "pagato": "pagata"}
-    if rimborso_data.stato and rimborso_data.stato in stati_msg:
+    stato_msg = {
+        "approvato": "approvata",
+        "rifiutato": "rifiutata",
+        "pagato": "pagata"
+    }
+    if rimborso_data.stato and rimborso_data.stato in stato_msg:
         await db.notifiche.insert_one({
             "user_id": rimborso["user_id"],
             "sede_id": rimborso.get("sede_id"),
             "tipo": "rimborso",
-            "titolo": f"Richiesta rimborso {stati_msg[rimborso_data.stato]}",
-            "messaggio": f"La tua richiesta di rimborso del {rimborso['data']} è stata {stati_msg[rimborso_data.stato]}",
+            "titolo": f"Richiesta rimborso {stato_msg[rimborso_data.stato]}",
+            "messaggio": f"La tua richiesta di rimborso del {rimborso['data']} è stata {stato_msg[rimborso_data.stato]}",
             "letto": False,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
     
     return {"message": "Rimborso aggiornato"}
 
-@api_router.post("/rimborsi/{rimborso_id}/contabile", tags=["Rimborsi"])
+@api_router.post("/rimborsi/{rimborso_id}/contabile")
 async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile = File(...)):
-    \"\"\"
-    Carica contabile bonifico e chiude rimborso.
-    
-    Imposta automaticamente stato = 'pagato'.
-    \"\"\"
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["admin", "superadmin"]:
@@ -900,7 +912,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    # Salva file
     content = await file.read()
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
@@ -910,7 +921,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
     
-    # Aggiorna rimborso
     await db.rimborsi.update_one(
         {"_id": ObjectId(rimborso_id)},
         {"$set": {
@@ -920,7 +930,6 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
         }}
     )
     
-    # Notifica utente
     await db.notifiche.insert_one({
         "user_id": rimborso["user_id"],
         "sede_id": rimborso.get("sede_id"),
@@ -933,13 +942,10 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     
     return {"message": "Contabile caricata e rimborso chiuso"}
 
-# ==============================================
-# ROUTE: ANNUNCI (BACHECA)
-# ==============================================
+# ==================== ANNUNCI (BULLETIN BOARD) ROUTES ====================
 
-@api_router.get("/annunci", tags=["Bacheca"])
+@api_router.get("/annunci")
 async def get_annunci(request: Request):
-    """Lista annunci in bacheca"""
     user = await get_current_user(request)
     
     query = {}
@@ -957,9 +963,8 @@ async def get_annunci(request: Request):
     
     return annunci
 
-@api_router.post("/annunci", tags=["Bacheca"])
+@api_router.post("/annunci")
 async def create_annuncio(annuncio_data: AnnuncioCreate, request: Request):
-    """Pubblica nuovo annuncio (Segreteria+)"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
@@ -978,11 +983,11 @@ async def create_annuncio(annuncio_data: AnnuncioCreate, request: Request):
     result = await db.annunci.insert_one(annuncio_doc)
     annuncio_doc["id"] = str(result.inserted_id)
     annuncio_doc.pop("_id", None)
+    
     return annuncio_doc
 
-@api_router.delete("/annunci/{annuncio_id}", tags=["Bacheca"])
+@api_router.delete("/annunci/{annuncio_id}")
 async def delete_annuncio(annuncio_id: str, request: Request):
-    """Elimina annuncio"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
@@ -991,15 +996,13 @@ async def delete_annuncio(annuncio_id: str, request: Request):
     result = await db.annunci.delete_one({"_id": ObjectId(annuncio_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Annuncio non trovato")
+    
     return {"message": "Annuncio eliminato"}
 
-# ==============================================
-# ROUTE: DOCUMENTI
-# ==============================================
+# ==================== DOCUMENTI ROUTES ====================
 
-@api_router.get("/documenti", tags=["Documenti"])
+@api_router.get("/documenti")
 async def get_documenti(request: Request, categoria: Optional[str] = None):
-    """Lista documenti/modulistica"""
     user = await get_current_user(request)
     
     query = {}
@@ -1020,7 +1023,7 @@ async def get_documenti(request: Request, categoria: Optional[str] = None):
     
     return documenti
 
-@api_router.post("/documenti", tags=["Documenti"])
+@api_router.post("/documenti")
 async def upload_documento(
     request: Request,
     file: UploadFile = File(...),
@@ -1028,7 +1031,6 @@ async def upload_documento(
     categoria: str = Form(...),
     descrizione: str = Form(None)
 ):
-    """Carica nuovo documento (Segreteria+)"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
@@ -1038,7 +1040,7 @@ async def upload_documento(
         raise HTTPException(status_code=400, detail="Formato file non supportato")
     
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
     
     file_id = str(uuid.uuid4())
@@ -1063,11 +1065,11 @@ async def upload_documento(
     result = await db.documenti.insert_one(doc_record)
     doc_record["id"] = str(result.inserted_id)
     doc_record.pop("_id", None)
+    
     return doc_record
 
-@api_router.get("/documenti/{doc_id}/download", tags=["Documenti"])
+@api_router.get("/documenti/{doc_id}/download")
 async def download_documento(doc_id: str, request: Request):
-    """Scarica documento"""
     user = await get_current_user(request)
     
     doc = await db.documenti.find_one({"_id": ObjectId(doc_id)})
@@ -1084,9 +1086,8 @@ async def download_documento(doc_id: str, request: Request):
     
     return FileResponse(filepath, filename=doc["filename"])
 
-@api_router.delete("/documenti/{doc_id}", tags=["Documenti"])
+@api_router.delete("/documenti/{doc_id}")
 async def delete_documento(doc_id: str, request: Request):
-    """Elimina documento"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
@@ -1101,15 +1102,13 @@ async def delete_documento(doc_id: str, request: Request):
         filepath.unlink()
     
     await db.documenti.delete_one({"_id": ObjectId(doc_id)})
+    
     return {"message": "Documento eliminato"}
 
-# ==============================================
-# ROUTE: NOTIFICHE
-# ==============================================
+# ==================== NOTIFICHE ROUTES ====================
 
-@api_router.get("/notifiche", tags=["Notifiche"])
+@api_router.get("/notifiche")
 async def get_notifiche(request: Request):
-    """Lista notifiche utente"""
     user = await get_current_user(request)
     
     query = {"$or": [
@@ -1132,16 +1131,19 @@ async def get_notifiche(request: Request):
     
     return notifiche
 
-@api_router.put("/notifiche/{notifica_id}/letto", tags=["Notifiche"])
+@api_router.put("/notifiche/{notifica_id}/letto")
 async def mark_notifica_letta(notifica_id: str, request: Request):
-    """Segna notifica come letta"""
-    await get_current_user(request)
-    await db.notifiche.update_one({"_id": ObjectId(notifica_id)}, {"$set": {"letto": True}})
+    user = await get_current_user(request)
+    
+    await db.notifiche.update_one(
+        {"_id": ObjectId(notifica_id)},
+        {"$set": {"letto": True}}
+    )
+    
     return {"message": "Notifica segnata come letta"}
 
-@api_router.put("/notifiche/letto-tutte", tags=["Notifiche"])
+@api_router.put("/notifiche/letto-tutte")
 async def mark_all_notifiche_lette(request: Request):
-    """Segna tutte le notifiche come lette"""
     user = await get_current_user(request)
     
     query = {"$or": [
@@ -1150,15 +1152,13 @@ async def mark_all_notifiche_lette(request: Request):
     ]}
     
     await db.notifiche.update_many(query, {"$set": {"letto": True}})
+    
     return {"message": "Tutte le notifiche segnate come lette"}
 
-# ==============================================
-# ROUTE: UTENTI
-# ==============================================
+# ==================== USERS MANAGEMENT ====================
 
-@api_router.get("/users", tags=["Utenti"])
+@api_router.get("/users")
 async def get_users(request: Request):
-    """Lista utenti (Admin+)"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["admin", "superadmin", "superuser", "segretario"]:
@@ -1180,9 +1180,8 @@ async def get_users(request: Request):
     
     return users
 
-@api_router.put("/users/{user_id}", tags=["Utenti"])
+@api_router.put("/users/{user_id}")
 async def update_user(user_id: str, user_data: UserUpdate, request: Request):
-    """Aggiorna profilo utente"""
     current_user = await get_current_user(request)
     
     if user_id != current_user["id"] and current_user["ruolo"] not in ["admin", "superadmin"]:
@@ -1193,16 +1192,11 @@ async def update_user(user_id: str, user_data: UserUpdate, request: Request):
         raise HTTPException(status_code=400, detail="Nessun dato da aggiornare")
     
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
+    
     return {"message": "Utente aggiornato"}
 
-@api_router.put("/users/{user_id}/ruolo", tags=["Utenti"])
+@api_router.put("/users/{user_id}/ruolo")
 async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...)):
-    \"\"\"
-    Modifica ruolo utente (Admin).
-    
-    Admin può assegnare: iscritto, delegato, segreteria, segretario, admin
-    SuperAdmin può anche assegnare: superuser, superadmin
-    \"\"\"
     current_user = await get_current_user(request)
     
     if current_user["ruolo"] not in ["admin", "superadmin"]:
@@ -1216,15 +1210,13 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
         raise HTTPException(status_code=400, detail="Ruolo non valido")
     
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"ruolo": ruolo}})
+    
     return {"message": "Ruolo aggiornato"}
 
-# ==============================================
-# ROUTE: REPORT
-# ==============================================
+# ==================== REPORTS ====================
 
-@api_router.get("/reports/rimborsi-annuali", tags=["Report"])
+@api_router.get("/reports/rimborsi-annuali")
 async def get_report_rimborsi_annuali(request: Request, anno: int):
-    """Report aggregato rimborsi per anno"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["admin", "superadmin", "superuser"]:
@@ -1257,9 +1249,8 @@ async def get_report_rimborsi_annuali(request: Request, anno: int):
     
     return results
 
-@api_router.get("/reports/rimborsi-export", tags=["Report"])
+@api_router.get("/reports/rimborsi-export")
 async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
-    """Export rimborsi in CSV"""
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["admin", "superadmin", "superuser"]:
@@ -1307,35 +1298,23 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
     else:
         return rimborsi
 
-# ==============================================
-# STARTUP - Inizializzazione database
-# ==============================================
+# ==================== STARTUP ====================
 
 @app.on_event("startup")
 async def startup():
-    \"\"\"
-    Inizializza database al primo avvio:
-    - Crea indici
-    - Crea superadmin se non esiste
-    - Crea motivi rimborso default
-    - Crea sede A22 se non esiste
-    \"\"\"
-    logger.info("Inizializzazione database...")
-    
-    # Indici
     await db.users.create_index("email", unique=True)
     await db.sedi.create_index("codice", unique=True)
     await db.login_attempts.create_index("identifier")
     
-    # SuperAdmin
     admin_email = os.environ.get("ADMIN_EMAIL", "superadmin@sla.it")
     admin_password = os.environ.get("ADMIN_PASSWORD", "SlaAdmin2024!")
     
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
+        hashed = hash_password(admin_password)
         await db.users.insert_one({
             "email": admin_email,
-            "password_hash": hash_password(admin_password),
+            "password_hash": hashed,
             "nome": "Super",
             "cognome": "Admin",
             "ruolo": "superadmin",
@@ -1350,7 +1329,7 @@ async def startup():
         )
         logger.info("Password SuperAdmin aggiornata")
     
-    # Motivi default
+    # Seed default motivi rimborso with richiede_note flag
     motivi_default = [
         {"nome": "RSA", "richiede_note": False},
         {"nome": "Sede", "richiede_note": False},
@@ -1366,12 +1345,13 @@ async def startup():
                 "created_at": datetime.now(timezone.utc).isoformat()
             })
     
-    # Rimuovi motivi vecchi
+    # Remove old motivi that are not in the new list
     await db.motivi_rimborso.delete_many({"nome": {"$nin": ["RSA", "Sede", "Altro"]}})
     
-    # Mantieni solo A22
+    # Only keep A22 sede
     await db.sedi.delete_many({"codice": {"$nin": ["A22"]}})
     
+    # Ensure A22 exists
     existing_a22 = await db.sedi.find_one({"codice": "A22"})
     if not existing_a22:
         await db.sedi.insert_one({
@@ -1384,44 +1364,36 @@ async def startup():
             "created_at": datetime.now(timezone.utc).isoformat()
         })
     
-    # Test credentials file
     creds_path = Path("/app/memory/test_credentials.md")
     creds_path.parent.mkdir(exist_ok=True)
-    creds_path.write_text(f\"\"\"# Test Credentials SLA Portale
+    creds_path.write_text(f"""# Test Credentials
 
 ## SuperAdmin
-- **Email**: {admin_email}
-- **Password**: {admin_password}
-- **Ruolo**: superadmin
+- Email: {admin_email}
+- Password: {admin_password}
+- Ruolo: superadmin
 
-## Sedi Disponibili
+## Auth Endpoints
+- POST /api/auth/register
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/refresh
+
+## Sedi
 - A22 - Autostrada del Brennero
 
 ## Motivi Rimborso
 - RSA (note non obbligatorie)
 - Sede (note non obbligatorie)
 - Altro (note OBBLIGATORIE)
-
-## Ruoli
-- superadmin: Accesso totale
-- superuser: Solo visualizzazione globale
-- admin: Gestione propria sede
-- segretario: Gestione sede
-- segreteria: Carica documenti/annunci
-- delegato: Richiede rimborsi
-- iscritto: Solo bacheca/documenti
-\"\"\")
+""")
     
     logger.info("Database inizializzato")
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Chiude connessione MongoDB"""
     client.close()
-
-# ==============================================
-# REGISTRA ROUTER E CORS
-# ==============================================
 
 app.include_router(api_router)
 

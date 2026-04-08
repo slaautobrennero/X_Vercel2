@@ -1,9 +1,41 @@
+/**
+ * ==============================================
+ * SLA PORTALE - Frontend React App
+ * ==============================================
+ * 
+ * Applicazione frontend per il portale rimborsi del Sindacato Lavoratori Autostradali.
+ * 
+ * Funzionalità principali:
+ * - Autenticazione JWT multi-ruolo
+ * - Dashboard personalizzata per ogni ruolo
+ * - Gestione rimborsi con calcolo KM automatico
+ * - Bacheca comunicati e documenti
+ * - Notifiche in-app
+ * - Export PDF/Excel rendiconti
+ * 
+ * Ruoli disponibili:
+ * - superadmin: Accesso totale multi-sede
+ * - superuser: Visualizzazione globale
+ * - admin: Gestione propria sede
+ * - segretario/segreteria: Gestione sede e documenti
+ * - delegato: Richiesta rimborsi
+ * - iscritto: Solo bacheca e documenti (sola lettura)
+ * 
+ * Stack Tecnologico:
+ * - React 18 + React Router v6
+ * - TailwindCSS per styling
+ * - Axios per API calls
+ * - Context API per state management
+ * 
+ * ==============================================
+ */
+
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import './App.css';
 
-// Pages
+// Pages - Pagine dell'applicazione
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -17,12 +49,20 @@ import ProfiloPage from './pages/ProfiloPage';
 import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
 
-// Layout
+// Layout - Layout principale con sidebar
 import MainLayout from './layouts/MainLayout';
 
+/**
+ * ProtectedRoute Component
+ * Protegge le route che richiedono autenticazione
+ * 
+ * @param {React.Node} children - Componente da proteggere
+ * @param {string[]} allowedRoles - Ruoli autorizzati (opzionale)
+ */
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
 
+  // Show loading spinner during auth check
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -31,10 +71,12 @@ function ProtectedRoute({ children, allowedRoles }) {
     );
   }
 
+  // Redirect to login if not authenticated
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  // Check role permissions
   if (allowedRoles && !allowedRoles.includes(user.ruolo)) {
     return <Navigate to="/" replace />;
   }
@@ -42,6 +84,10 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
+/**
+ * PublicRoute Component
+ * Route accessibili solo agli utenti non autenticati (login/register)
+ */
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
 
@@ -53,6 +99,7 @@ function PublicRoute({ children }) {
     );
   }
 
+  // Redirect to dashboard if already logged in
   if (user) {
     return <Navigate to="/" replace />;
   }
