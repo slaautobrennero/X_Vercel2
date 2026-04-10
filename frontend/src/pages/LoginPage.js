@@ -29,20 +29,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4 relative overflow-hidden" data-testid="login-page">
-      {/* Background watermark logo - Logo SLA sfumato e trasparente */}
-      <div 
-        className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none"
-        style={{
-          backgroundImage: 'url(https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/9qoxl0rw_Full%20logo.png)',
-          backgroundSize: '60%',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat'
-        }}
-      />
-
-      {/* Login Form - Centrato */}
-      <div className="w-full max-w-md relative z-10">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4" data-testid="login-page">
+      {/* Login Form - Centrato (SENZA sfondo logo) */}
+      <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="mb-8 text-center">
             <img 
