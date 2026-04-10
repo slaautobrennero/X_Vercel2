@@ -55,7 +55,7 @@ export default function MainLayout() {
         className="fixed inset-0 flex items-center justify-center opacity-[0.05] pointer-events-none z-0"
         style={{
           backgroundImage: 'url(https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/jf6zpv8y_SfondoSLA.png)',
-          backgroundSize: 'contain',
+          backgroundSize: 'cover',
           backgroundPosition: 'center center',
           backgroundRepeat: 'no-repeat'
         }}
