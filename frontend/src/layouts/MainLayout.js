@@ -52,10 +52,10 @@ export default function MainLayout() {
     <div className="min-h-screen bg-gray-50 relative" data-testid="main-layout">
       {/* Background watermark logo SLA - Fisso in tutte le pagine interne */}
       <div 
-        className="fixed inset-0 flex items-center justify-center opacity-[0.06] pointer-events-none z-0"
+        className="fixed inset-0 flex items-center justify-center opacity-[0.05] pointer-events-none z-0"
         style={{
-          backgroundImage: 'url(https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/9qoxl0rw_Full%20logo.png)',
-          backgroundSize: '45%',
+          backgroundImage: 'url(https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/jf6zpv8y_SfondoSLA.png)',
+          backgroundSize: 'contain',
           backgroundPosition: 'center center',
           backgroundRepeat: 'no-repeat'
         }}
