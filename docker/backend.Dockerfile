@@ -30,12 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia requirements e installa dipendenze Python
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copia codice sorgente
-COPY . .
+# Copia codice sorgente backend
+COPY backend/ .
 
 # Crea directory uploads
 RUN mkdir -p /app/uploads && chmod 777 /app/uploads

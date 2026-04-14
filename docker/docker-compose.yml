@@ -22,8 +22,15 @@ services:
   # ==========================================
   # MongoDB - Database
   # ==========================================
+  # NOTA RASPBERRY PI:
+  # - Raspberry Pi 4 con OS 64-bit: usa mongo:6.0 (OK)
+  # - Raspberry Pi 4 con OS 32-bit: cambia in mongo:4.4
+  # Per verificare: uname -m
+  #   - aarch64 = 64-bit (OK mongo:6.0)
+  #   - armv7l = 32-bit (usa mongo:4.4)
+  # ==========================================
   mongodb:
-    image: mongo:6.0
+    image: mongo:6.0  # Cambia in mongo:4.4 se Raspberry Pi 32-bit
     container_name: sla-mongodb
     restart: unless-stopped
     volumes:
@@ -33,7 +40,7 @@ services:
       # MONGO_INITDB_ROOT_USERNAME: admin
       # MONGO_INITDB_ROOT_PASSWORD: password_sicura
     ports:
-      - "27017:27017"  # Rimuovi in produzione
+      - "27017:27017"  # Rimuovi in produzione per sicurezza
     networks:
       - sla-network
 
