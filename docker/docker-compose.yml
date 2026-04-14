@@ -42,8 +42,8 @@ services:
   # ==========================================
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/backend.Dockerfile
     container_name: sla-backend
     restart: unless-stopped
     depends_on:
@@ -55,10 +55,6 @@ services:
       
       # JWT - CAMBIA IN PRODUZIONE!
       JWT_SECRET: ${JWT_SECRET:-genera-una-chiave-segreta-lunga-almeno-32-caratteri}
-      
-      # Admin iniziale
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-superadmin@sla.it}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-CambiaQuestaPassword!}
       
       # Google Maps (opzionale)
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
@@ -77,8 +73,8 @@ services:
   # ==========================================
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
       args:
         REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
     container_name: sla-frontend

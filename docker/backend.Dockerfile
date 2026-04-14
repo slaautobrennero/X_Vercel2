@@ -3,7 +3,7 @@
 # ============================================
 # 
 # Build:
-#   docker build -t sla-backend .
+#   docker build -t sla-backend -f backend.Dockerfile ../backend
 #
 # Run standalone:
 #   docker run -p 8001:8001 sla-backend
@@ -31,20 +31,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copia requirements e installa dipendenze Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copia codice sorgente
 COPY . .
 
 # Crea directory uploads
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/uploads && chmod 777 /app/uploads
 
 # Esponi porta
 EXPOSE 8001
 
-# Comando di avvio
-# Usa gunicorn in produzione per performance migliori
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import requests; requests.get('http://localhost:8001/api/health')" || exit 1
 
-# Per produzione con gunicorn (decommentare):
-# CMD ["gunicorn", "server:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8001"]
+# Comando di avvio
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
