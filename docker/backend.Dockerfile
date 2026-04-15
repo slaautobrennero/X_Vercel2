@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copia requirements e installa dipendenze Python
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copia codice sorgente backend
