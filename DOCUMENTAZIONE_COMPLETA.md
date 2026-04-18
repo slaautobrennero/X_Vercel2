@@ -2190,7 +2190,7 @@ server {
 #### SuperAdmin
 ```
 Email: superadmin@sla.it
-Password: SlaAdmin2024!
+Password: CambiaQuestaPassword!
 Ruolo: SuperAdmin
 Accesso: Completo (tutte le funzionalità)
 ```
