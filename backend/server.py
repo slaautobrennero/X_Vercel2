@@ -117,7 +117,7 @@ class UserCreate(UserBase):
     password: str  # Verrà hashato con bcrypt
     sede_id: Optional[str] = None  # Riferimento alla sede (A22, CAV, etc.)
     ruolo: str = "iscritto"  # Default: iscritto (accesso solo bacheca/documenti)
-    # Ruoli disponibili: superadmin, superuser, admin, segretario, segreteria, delegato, iscritto
+    # Ruoli disponibili: superadmin, superuser, admin, cassiere, segretario, segreteria, delegato, iscritto
 
 class UserUpdate(BaseModel):
     """User profile update - Aggiornamento profilo utente"""
@@ -331,6 +331,79 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Token scaduto")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
+
+# ==================== NOTIFICATION HELPERS ====================
+
+async def _notify_users_by_role(roles: list, sede_id: Optional[str], notifica_data: dict, include_global: bool = False):
+    """
+    Crea una notifica per ogni utente che ha uno dei ruoli indicati nella sede.
+    Se include_global=True include anche superadmin/superuser (sede_id None).
+    """
+    if sede_id and include_global:
+        query = {
+            "$and": [
+                {"ruolo": {"$in": roles}},
+                {"$or": [{"sede_id": sede_id}, {"sede_id": None}]}
+            ]
+        }
+    elif sede_id:
+        query = {"ruolo": {"$in": roles}, "sede_id": sede_id}
+    else:
+        query = {"ruolo": {"$in": roles}}
+
+    notifiche_to_insert = []
+    async for u in db.users.find(query, {"_id": 1}):
+        notifiche_to_insert.append({
+            **notifica_data,
+            "user_id": str(u["_id"]),
+            "letto": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    if notifiche_to_insert:
+        await db.notifiche.insert_many(notifiche_to_insert)
+
+
+async def _notify_user(user_id: str, notifica_data: dict):
+    """Crea una notifica per un singolo utente."""
+    await db.notifiche.insert_one({
+        **notifica_data,
+        "user_id": user_id,
+        "letto": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
+async def _notify_all_in_sede(sede_id: Optional[str], notifica_data: dict, exclude_user_id: Optional[str] = None):
+    """
+    Notifica TUTTI gli utenti: se sede_id è valorizzato, gli utenti di quella sede + utenti globali (sede_id None).
+    Se sede_id è None, notifica tutti gli utenti del sistema.
+    Esclude opzionalmente l'autore.
+    """
+    if sede_id:
+        base_query = {"$or": [{"sede_id": sede_id}, {"sede_id": None}]}
+    else:
+        base_query = {}
+
+    if exclude_user_id:
+        try:
+            query = {"$and": [base_query, {"_id": {"$ne": ObjectId(exclude_user_id)}}]} if base_query else {"_id": {"$ne": ObjectId(exclude_user_id)}}
+        except Exception:
+            query = base_query
+    else:
+        query = base_query
+
+    notifiche_to_insert = []
+    async for u in db.users.find(query, {"_id": 1}):
+        notifiche_to_insert.append({
+            **notifica_data,
+            "user_id": str(u["_id"]),
+            "letto": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    if notifiche_to_insert:
+        await db.notifiche.insert_many(notifiche_to_insert)
+
+
 
 # ==================== AUTH ROUTES ====================
 # API per registrazione, login, logout e gestione sessioni
@@ -657,7 +730,7 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     query = {}
     
     if user["ruolo"] not in ["superadmin", "superuser"]:
-        if user["ruolo"] == "admin":
+        if user["ruolo"] in ["admin", "cassiere"]:
             query["sede_id"] = user.get("sede_id")
         else:
             query["user_id"] = user["id"]
@@ -759,22 +832,23 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     rimborso_doc["id"] = str(result.inserted_id)
     rimborso_doc.pop("_id", None)
     
-    # Create notification for admin
+    # Notifica Admin + Cassiere della sede
     notifica_msg = f"{user['nome']} {user['cognome']} ha inviato una richiesta di rimborso di €{importo_totale:.2f}"
     if rimborso_data.km_modificati_manualmente:
         notifica_msg += " - ATTENZIONE: KM modificati manualmente!"
     
-    await db.notifiche.insert_one({
-        "user_id": None,
-        "sede_id": user.get("sede_id"),
-        "tipo": "rimborso",
-        "titolo": "Nuova richiesta rimborso" + (" ⚠️ KM MODIFICATI" if rimborso_data.km_modificati_manualmente else ""),
-        "messaggio": notifica_msg,
-        "rimborso_id": str(result.inserted_id),
-        "alert_km": rimborso_data.km_modificati_manualmente,
-        "letto": False,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    await _notify_users_by_role(
+        roles=["admin", "cassiere"],
+        sede_id=user.get("sede_id"),
+        notifica_data={
+            "tipo": "rimborso",
+            "titolo": "Nuova richiesta rimborso" + (" ⚠️ KM MODIFICATI" if rimborso_data.km_modificati_manualmente else ""),
+            "messaggio": notifica_msg,
+            "rimborso_id": str(result.inserted_id),
+            "alert_km": rimborso_data.km_modificati_manualmente,
+        },
+        include_global=False
+    )
     
     return rimborso_doc
 
@@ -865,15 +939,22 @@ async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: Upload
 async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "superadmin"]:
-        raise HTTPException(status_code=403, detail="Solo admin può gestire i rimborsi")
+    if user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Solo admin/cassiere può gestire i rimborsi")
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if user["ruolo"] == "admin" and rimborso.get("sede_id") != user.get("sede_id"):
+    if user["ruolo"] in ["admin", "cassiere"] and rimborso.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    
+    # Lo stato "pagato" può essere impostato SOLO via /contabile (con upload obbligatorio)
+    if rimborso_data.stato == "pagato":
+        raise HTTPException(
+            status_code=400,
+            detail="Per pagare un rimborso devi caricare la contabile tramite l'apposito endpoint /contabile"
+        )
     
     update_data = {k: v for k, v in rimborso_data.model_dump().items() if v is not None}
     if not update_data:
@@ -883,21 +964,22 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     
     await db.rimborsi.update_one({"_id": ObjectId(rimborso_id)}, {"$set": update_data})
     
+    # Notifica all'utente richiedente per approvato/rifiutato
     stato_msg = {
         "approvato": "approvata",
         "rifiutato": "rifiutata",
-        "pagato": "pagata"
     }
     if rimborso_data.stato and rimborso_data.stato in stato_msg:
-        await db.notifiche.insert_one({
-            "user_id": rimborso["user_id"],
-            "sede_id": rimborso.get("sede_id"),
-            "tipo": "rimborso",
-            "titolo": f"Richiesta rimborso {stato_msg[rimborso_data.stato]}",
-            "messaggio": f"La tua richiesta di rimborso del {rimborso['data']} è stata {stato_msg[rimborso_data.stato]}",
-            "letto": False,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        })
+        await _notify_user(
+            user_id=rimborso["user_id"],
+            notifica_data={
+                "sede_id": rimborso.get("sede_id"),
+                "tipo": "rimborso",
+                "titolo": f"Richiesta rimborso {stato_msg[rimborso_data.stato]}",
+                "messaggio": f"La tua richiesta di rimborso del {rimborso['data']} è stata {stato_msg[rimborso_data.stato]}",
+                "rimborso_id": rimborso_id,
+            }
+        )
     
     return {"message": "Rimborso aggiornato"}
 
@@ -905,14 +987,30 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
 async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "superadmin"]:
-        raise HTTPException(status_code=403, detail="Solo admin può caricare contabili")
+    if user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Solo admin/cassiere può caricare contabili")
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
+    if user["ruolo"] in ["admin", "cassiere"] and rimborso.get("sede_id") != user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    
+    if rimborso.get("stato") == "rifiutato":
+        raise HTTPException(status_code=400, detail="Impossibile pagare un rimborso rifiutato")
+    
+    if rimborso.get("stato") == "pagato":
+        raise HTTPException(status_code=400, detail="Rimborso già pagato")
+    
+    # Validazione file
+    if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
+        raise HTTPException(status_code=400, detail="Formato file non supportato (solo PDF, JPG, PNG)")
+    
     content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
+    
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"contabile_{file_id}.{ext}"
@@ -921,26 +1019,59 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
     
+    # Se rimborso in_attesa, salta direttamente a pagato (auto-approvazione + pagamento)
+    pagamento_diretto = rimborso.get("stato") == "in_attesa"
+    
     await db.rimborsi.update_one(
         {"_id": ObjectId(rimborso_id)},
         {"$set": {
             "stato": "pagato",
             "contabile": {"filename": file.filename, "path": filename},
-            "pagato_at": datetime.now(timezone.utc).isoformat()
+            "pagato_at": datetime.now(timezone.utc).isoformat(),
+            "pagato_by": user["id"],
+            "pagato_by_nome": f"{user['nome']} {user['cognome']}"
         }}
     )
     
-    await db.notifiche.insert_one({
-        "user_id": rimborso["user_id"],
-        "sede_id": rimborso.get("sede_id"),
-        "tipo": "rimborso",
-        "titolo": "Rimborso pagato",
-        "messaggio": f"Il rimborso del {rimborso['data']} è stato pagato. Contabile disponibile.",
-        "letto": False,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    # Notifica all'utente richiedente
+    if pagamento_diretto:
+        msg_user = f"Il tuo rimborso del {rimborso['data']} è stato approvato e pagato. Contabile disponibile."
+        titolo_user = "Rimborso approvato e pagato"
+    else:
+        msg_user = f"Il tuo rimborso del {rimborso['data']} è stato pagato. Contabile disponibile."
+        titolo_user = "Rimborso pagato"
     
-    return {"message": "Contabile caricata e rimborso chiuso"}
+    await _notify_user(
+        user_id=rimborso["user_id"],
+        notifica_data={
+            "sede_id": rimborso.get("sede_id"),
+            "tipo": "rimborso",
+            "titolo": titolo_user,
+            "messaggio": msg_user,
+            "rimborso_id": rimborso_id,
+        }
+    )
+    
+    # Notifica anche Admin + Cassiere della sede (escluso chi ha appena pagato)
+    notifiche_admin = []
+    async for u in db.users.find(
+        {"ruolo": {"$in": ["admin", "cassiere"]}, "sede_id": rimborso.get("sede_id"), "_id": {"$ne": ObjectId(user["id"])}},
+        {"_id": 1}
+    ):
+        notifiche_admin.append({
+            "user_id": str(u["_id"]),
+            "sede_id": rimborso.get("sede_id"),
+            "tipo": "rimborso",
+            "titolo": "Rimborso pagato",
+            "messaggio": f"{user['nome']} {user['cognome']} ha pagato il rimborso del {rimborso['data']}",
+            "rimborso_id": rimborso_id,
+            "letto": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    if notifiche_admin:
+        await db.notifiche.insert_many(notifiche_admin)
+    
+    return {"message": "Contabile caricata e rimborso pagato"}
 
 # ==================== ANNUNCI (BULLETIN BOARD) ROUTES ====================
 
@@ -1014,6 +1145,19 @@ async def create_annuncio(
     result = await db.annunci.insert_one(annuncio_doc)
     annuncio_doc["id"] = str(result.inserted_id)
     annuncio_doc.pop("_id", None)
+    
+    # Notifica TUTTI gli utenti della sede (o globali se sede_id None)
+    await _notify_all_in_sede(
+        sede_id=annuncio_doc["sede_id"],
+        notifica_data={
+            "sede_id": annuncio_doc["sede_id"],
+            "tipo": "annuncio",
+            "titolo": "Nuovo comunicato in bacheca",
+            "messaggio": f"{annuncio_doc['autore_nome']}: {titolo}",
+            "annuncio_id": annuncio_doc["id"],
+        },
+        exclude_user_id=user["id"]
+    )
     
     return annuncio_doc
 
@@ -1127,6 +1271,19 @@ async def upload_documento(
     doc_record["id"] = str(result.inserted_id)
     doc_record.pop("_id", None)
     
+    # Notifica TUTTI gli utenti della sede (o globali se sede_id None)
+    await _notify_all_in_sede(
+        sede_id=doc_record["sede_id"],
+        notifica_data={
+            "sede_id": doc_record["sede_id"],
+            "tipo": "documento",
+            "titolo": "Nuovo documento disponibile",
+            "messaggio": f"{user['nome']} {user['cognome']} ha caricato: {nome}",
+            "documento_id": doc_record["id"],
+        },
+        exclude_user_id=user["id"]
+    )
+    
     return doc_record
 
 @api_router.get("/documenti/{doc_id}/download")
@@ -1172,17 +1329,11 @@ async def delete_documento(doc_id: str, request: Request):
 async def get_notifiche(request: Request):
     user = await get_current_user(request)
     
+    # Notifiche dirette all'utente + retrocompatibilità con notifiche vecchie (user_id=None, sede_id specifica)
     query = {"$or": [
         {"user_id": user["id"]},
         {"user_id": None, "sede_id": user.get("sede_id")}
     ]}
-    
-    if user["ruolo"] in ["admin", "superadmin"]:
-        query = {"$or": [
-            {"user_id": user["id"]},
-            {"sede_id": user.get("sede_id")},
-            {"sede_id": None}
-        ]}
     
     notifiche = []
     async for notifica in db.notifiche.find(query).sort("created_at", -1).limit(50):
@@ -1222,7 +1373,7 @@ async def mark_all_notifiche_lette(request: Request):
 async def get_users(request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "superadmin", "superuser", "segretario"]:
+    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser", "segretario"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {}
@@ -1263,7 +1414,7 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
     if current_user["ruolo"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
-    valid_roles = ["iscritto", "delegato", "segreteria", "segretario", "admin"]
+    valid_roles = ["iscritto", "delegato", "segreteria", "segretario", "cassiere", "admin"]
     if current_user["ruolo"] == "superadmin":
         valid_roles.extend(["superuser", "superadmin"])
     
@@ -1280,7 +1431,7 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
 async def get_report_rimborsi_annuali(request: Request, anno: int):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "superadmin", "superuser"]:
+    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {"data": {"$regex": f"^{anno}"}}
@@ -1314,7 +1465,7 @@ async def get_report_rimborsi_annuali(request: Request, anno: int):
 async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "superadmin", "superuser"]:
+    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {"data": {"$regex": f"^{anno}"}}

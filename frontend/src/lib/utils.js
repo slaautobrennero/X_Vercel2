@@ -47,15 +47,18 @@ export const RUOLI = {
   superadmin: 'Super Admin',
   superuser: 'Super User',
   admin: 'Admin',
+  cassiere: 'Cassiere',
   segretario: 'Segretario',
   segreteria: 'Segreteria',
   delegato: 'Delegato',
   iscritto: 'Iscritto'
 };
 
+// Classi Tailwind per badge stato rimborso
+// in_attesa: bianco | approvato: giallo | rifiutato: rosso | pagato: verde
 export const STATI_RIMBORSO = {
-  in_attesa: { label: 'In Attesa', color: 'warning' },
-  approvato: { label: 'Approvato', color: 'info' },
-  rifiutato: { label: 'Rifiutato', color: 'error' },
-  pagato: { label: 'Pagato', color: 'success' }
+  in_attesa: { label: 'In Attesa', color: 'warning', badgeClass: 'bg-white border border-gray-300 text-gray-700' },
+  approvato: { label: 'Approvato', color: 'warning', badgeClass: 'bg-yellow-100 border border-yellow-300 text-yellow-800' },
+  rifiutato: { label: 'Rifiutato', color: 'error', badgeClass: 'bg-red-100 border border-red-300 text-red-800' },
+  pagato: { label: 'Pagato', color: 'success', badgeClass: 'bg-green-100 border border-green-300 text-green-800' }
 };

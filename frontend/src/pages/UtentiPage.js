@@ -113,6 +113,7 @@ export default function UtentiPage() {
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         u.ruolo === 'superadmin' ? 'bg-purple-100 text-purple-800' :
                         u.ruolo === 'admin' ? 'bg-blue-100 text-blue-800' :
+                        u.ruolo === 'cassiere' ? 'bg-emerald-100 text-emerald-800' :
                         u.ruolo === 'segretario' ? 'bg-indigo-100 text-indigo-800' :
                         u.ruolo === 'segreteria' ? 'bg-cyan-100 text-cyan-800' :
                         u.ruolo === 'delegato' ? 'bg-green-100 text-green-800' :

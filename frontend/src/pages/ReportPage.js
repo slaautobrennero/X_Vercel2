@@ -16,7 +16,7 @@ export default function ReportPage() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  const isAllowed = ['admin', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const isAllowed = ['admin', 'cassiere', 'superadmin', 'superuser'].includes(user?.ruolo);
 
   useEffect(() => {
     if (isAllowed) {

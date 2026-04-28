@@ -30,11 +30,11 @@ export default function MainLayout() {
     navigate('/login');
   };
 
-  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
   const canManageUsers = ['segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
   const canManageSedi = ['superadmin'].includes(user?.ruolo);
   const canManageMotivi = ['superadmin'].includes(user?.ruolo);
-  const canViewReports = ['admin', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canViewReports = ['admin', 'cassiere', 'superadmin', 'superuser'].includes(user?.ruolo);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },

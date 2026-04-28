@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const [recentRimborsi, setRecentRimborsi] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
 
   useEffect(() => {
     const fetchData = async () => {

@@ -34,7 +34,7 @@ export default function RimborsiPage() {
   const [calcolandoKm, setCalcolandoKm] = useState(false);
   const [selectedMotivo, setSelectedMotivo] = useState(null);
 
-  const isAdmin = ['admin', 'superadmin'].includes(user?.ruolo);
+  const isAdmin = ['admin', 'cassiere', 'superadmin'].includes(user?.ruolo);
 
   useEffect(() => {
     fetchData();
@@ -146,6 +146,7 @@ export default function RimborsiPage() {
       setShowDetailModal(null);
     } catch (error) {
       console.error('Error updating rimborso:', error);
+      alert(error.response?.data?.detail || 'Errore durante l\'aggiornamento');
     }
   };
 
@@ -160,6 +161,7 @@ export default function RimborsiPage() {
       setShowDetailModal(null);
     } catch (error) {
       console.error('Error uploading contabile:', error);
+      alert(error.response?.data?.detail || 'Errore durante il caricamento della contabile');
     }
   };
 
@@ -263,10 +265,7 @@ export default function RimborsiPage() {
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{formatCurrency(rimborso.importo_totale)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        rimborso.stato === 'pagato' ? 'bg-green-100 text-green-800' :
-                        rimborso.stato === 'approvato' ? 'bg-blue-100 text-blue-800' :
-                        rimborso.stato === 'rifiutato' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
+                        STATI_RIMBORSO[rimborso.stato]?.badgeClass || 'bg-gray-100 text-gray-700'
                       }`}>
                         {STATI_RIMBORSO[rimborso.stato]?.label || rimborso.stato}
                       </span>
@@ -631,10 +630,7 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
             <div>
               <p className="text-sm text-gray-500">Stato</p>
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                rimborso.stato === 'pagato' ? 'bg-green-100 text-green-800' :
-                rimborso.stato === 'approvato' ? 'bg-blue-100 text-blue-800' :
-                rimborso.stato === 'rifiutato' ? 'bg-red-100 text-red-800' :
-                'bg-yellow-100 text-yellow-800'
+                STATI_RIMBORSO[rimborso.stato]?.badgeClass || 'bg-gray-100 text-gray-700'
               }`}>
                 {STATI_RIMBORSO[rimborso.stato]?.label || rimborso.stato}
               </span>
@@ -744,46 +740,93 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
 
           {/* Admin Actions */}
           {isAdmin && rimborso.stato === 'in_attesa' && (
-            <div className="flex gap-2 pt-4 border-t border-gray-200">
-              <button
-                onClick={() => onUpdateStato(rimborso.id, 'approvato')}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
-                data-testid="approve-rimborso-btn"
-              >
-                <Check size={18} />
-                Approva
-              </button>
-              <button
-                onClick={() => onUpdateStato(rimborso.id, 'rifiutato')}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
-                data-testid="reject-rimborso-btn"
-              >
-                <XCircle size={18} />
-                Rifiuta
-              </button>
+            <div className="space-y-3 pt-4 border-t border-gray-200">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onUpdateStato(rimborso.id, 'approvato')}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-md transition-colors"
+                  data-testid="approve-rimborso-btn"
+                >
+                  <Check size={18} />
+                  Approva
+                </button>
+                <button
+                  onClick={() => onUpdateStato(rimborso.id, 'rifiutato')}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+                  data-testid="reject-rimborso-btn"
+                >
+                  <XCircle size={18} />
+                  Rifiuta
+                </button>
+              </div>
+
+              {/* Pagamento diretto: salta approvazione */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">
+                  Oppure paga direttamente (carica contabile)
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    onChange={(e) => setContabileFile(e.target.files?.[0] || null)}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    className="flex-1 text-sm"
+                    data-testid="contabile-file-direct"
+                  />
+                  <button
+                    onClick={() => contabileFile && onUploadContabile(rimborso.id, contabileFile)}
+                    disabled={!contabileFile}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors disabled:opacity-50"
+                    data-testid="pay-direct-btn"
+                  >
+                    <CreditCard size={18} />
+                    Paga
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
           {isAdmin && rimborso.stato === 'approvato' && (
             <div className="pt-4 border-t border-gray-200">
-              <p className="text-sm font-medium text-gray-700 mb-2">Carica Contabile Bonifico</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Carica Contabile per chiudere il pagamento <span className="text-red-500">*</span>
+              </p>
               <div className="flex gap-2">
                 <input
                   type="file"
                   onChange={(e) => setContabileFile(e.target.files?.[0] || null)}
                   accept=".pdf,.jpg,.jpeg,.png"
                   className="flex-1 text-sm"
+                  data-testid="contabile-file-input"
                 />
                 <button
                   onClick={() => contabileFile && onUploadContabile(rimborso.id, contabileFile)}
                   disabled={!contabileFile}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#1E4D8C] hover:bg-[#163A6A] text-white rounded-md transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors disabled:opacity-50"
                   data-testid="upload-contabile-btn"
                 >
                   <CreditCard size={18} />
-                  Chiudi
+                  Paga
                 </button>
               </div>
+              <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (max 5MB)</p>
+            </div>
+          )}
+
+          {/* Mostra contabile se pagato */}
+          {rimborso.stato === 'pagato' && rimborso.contabile && (
+            <div className="pt-4 border-t border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-2">Contabile pagamento</p>
+              <div className="flex items-center gap-2 bg-green-50 px-3 py-2 rounded">
+                <FileText size={16} className="text-green-600" />
+                <span className="text-sm">{rimborso.contabile.filename}</span>
+              </div>
+              {rimborso.pagato_by_nome && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Pagato da: {rimborso.pagato_by_nome}
+                </p>
+              )}
             </div>
           )}
         </div>

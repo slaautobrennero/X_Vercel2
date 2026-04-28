@@ -132,7 +132,7 @@ function AppRoutes() {
         <Route path="bacheca" element={<BachecaPage />} />
         <Route path="documenti" element={<DocumentiPage />} />
         <Route path="rimborsi" element={
-          <ProtectedRoute allowedRoles={['delegato', 'segreteria', 'segretario', 'admin', 'superadmin', 'superuser']}>
+          <ProtectedRoute allowedRoles={['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser']}>
             <RimborsiPage />
           </ProtectedRoute>
         } />
@@ -153,7 +153,7 @@ function AppRoutes() {
           </ProtectedRoute>
         } />
         <Route path="report" element={
-          <ProtectedRoute allowedRoles={['admin', 'superadmin', 'superuser']}>
+          <ProtectedRoute allowedRoles={['admin', 'cassiere', 'superadmin', 'superuser']}>
             <ReportPage />
           </ProtectedRoute>
         } />
