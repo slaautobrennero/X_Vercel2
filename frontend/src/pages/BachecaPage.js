@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime } from '../lib/utils';
 import axios from 'axios';
-import { Megaphone, Plus, Trash2, Link as LinkIcon, X } from 'lucide-react';
+import { Megaphone, Plus, Trash2, Link as LinkIcon, X, Upload, Download, Paperclip } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,6 +12,7 @@ export default function BachecaPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ titolo: '', contenuto: '', link_documento: '' });
+  const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const canPost = ['segreteria', 'segretario', 'admin', 'superadmin'].includes(user?.ruolo);
@@ -31,18 +32,55 @@ export default function BachecaPage() {
     }
   };
 
+  const resetForm = () => {
+    setFormData({ titolo: '', contenuto: '', link_documento: '' });
+    setFile(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await axios.post(`${API}/annunci`, formData);
+      const data = new FormData();
+      data.append('titolo', formData.titolo);
+      data.append('contenuto', formData.contenuto);
+      if (formData.link_documento) {
+        data.append('link_documento', formData.link_documento);
+      }
+      if (file) {
+        data.append('file', file);
+      }
+
+      await axios.post(`${API}/annunci`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       setShowModal(false);
-      setFormData({ titolo: '', contenuto: '', link_documento: '' });
+      resetForm();
       fetchAnnunci();
     } catch (error) {
       console.error('Error creating annuncio:', error);
+      alert(error.response?.data?.detail || 'Errore durante la pubblicazione');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDownload = async (annuncio) => {
+    try {
+      const response = await axios.get(`${API}/annunci/${annuncio.id}/download`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', annuncio.allegato_filename || 'allegato');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading allegato:', error);
+      alert('Errore nel download del file');
     }
   };
 
@@ -97,17 +135,33 @@ export default function BachecaPage() {
                 <div className="flex-1">
                   <h2 className="text-lg font-semibold text-gray-900">{annuncio.titolo}</h2>
                   <p className="text-gray-600 mt-2 whitespace-pre-wrap">{annuncio.contenuto}</p>
+
+                  {/* Allegato file */}
+                  {annuncio.allegato_filename && (
+                    <button
+                      onClick={() => handleDownload(annuncio)}
+                      className="inline-flex items-center gap-2 mt-3 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-[#1E4D8C] rounded-md text-sm transition-colors"
+                      data-testid={`download-annuncio-${annuncio.id}`}
+                    >
+                      <Paperclip size={14} />
+                      <span className="truncate max-w-xs">{annuncio.allegato_filename}</span>
+                      <Download size={14} />
+                    </button>
+                  )}
+
+                  {/* Link esterno */}
                   {annuncio.link_documento && (
-                    <a 
-                      href={annuncio.link_documento} 
-                      target="_blank" 
+                    <a
+                      href={annuncio.link_documento}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 mt-3 text-[#1E4D8C] hover:underline text-sm"
+                      className="inline-flex items-center gap-1 mt-3 ml-2 text-[#1E4D8C] hover:underline text-sm"
                     >
                       <LinkIcon size={14} />
-                      Documento allegato
+                      Link esterno
                     </a>
                   )}
+
                   <div className="mt-4 text-sm text-gray-500">
                     <span>{annuncio.autore_nome}</span>
                     <span className="mx-2">•</span>
@@ -132,10 +186,10 @@ export default function BachecaPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
               <h2 className="text-lg font-semibold text-gray-900">Nuovo Annuncio</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowModal(false); resetForm(); }} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
@@ -162,8 +216,44 @@ export default function BachecaPage() {
                   data-testid="annuncio-contenuto-input"
                 />
               </div>
+
+              {/* Upload file allegato */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Link Documento (opzionale)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Allegato (opzionale)</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#1E4D8C] transition-colors">
+                  <input
+                    type="file"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    className="hidden"
+                    id="annuncio-file-upload"
+                    data-testid="annuncio-file-input"
+                  />
+                  <label htmlFor="annuncio-file-upload" className="cursor-pointer">
+                    <Upload size={28} className="mx-auto text-gray-400 mb-2" />
+                    {file ? (
+                      <div>
+                        <p className="text-sm text-gray-900 font-medium">{file.name}</p>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); setFile(null); }}
+                          className="text-xs text-red-600 hover:underline mt-1"
+                        >
+                          Rimuovi
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-600">Clicca per selezionare un file</p>
+                        <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG (max 5MB)</p>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link esterno (opzionale)</label>
                 <input
                   type="url"
                   value={formData.link_documento}
@@ -176,7 +266,7 @@ export default function BachecaPage() {
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { setShowModal(false); resetForm(); }}
                   className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                 >
                   Annulla

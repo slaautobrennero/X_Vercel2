@@ -964,16 +964,47 @@ async def get_annunci(request: Request):
     return annunci
 
 @api_router.post("/annunci")
-async def create_annuncio(annuncio_data: AnnuncioCreate, request: Request):
+async def create_annuncio(
+    request: Request,
+    titolo: str = Form(...),
+    contenuto: str = Form(...),
+    link_documento: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None)
+):
     user = await get_current_user(request)
     
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
+    allegato_filename = None
+    allegato_path = None
+    
+    # Gestione upload file opzionale
+    if file and file.filename:
+        if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
+            raise HTTPException(status_code=400, detail="Formato file non supportato (solo PDF, JPG, PNG)")
+        
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
+        
+        file_id = str(uuid.uuid4())
+        ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+        stored_name = f"annuncio_{file_id}.{ext}"
+        filepath = UPLOAD_DIR / stored_name
+        
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(content)
+        
+        allegato_filename = file.filename
+        allegato_path = stored_name
+    
     annuncio_doc = {
-        "titolo": annuncio_data.titolo,
-        "contenuto": annuncio_data.contenuto,
-        "link_documento": annuncio_data.link_documento,
+        "titolo": titolo,
+        "contenuto": contenuto,
+        "link_documento": link_documento if link_documento else None,
+        "allegato_filename": allegato_filename,
+        "allegato_path": allegato_path,
         "sede_id": user.get("sede_id") if user["ruolo"] != "superadmin" else None,
         "autore_id": user["id"],
         "autore_nome": f"{user['nome']} {user['cognome']}",
@@ -986,6 +1017,28 @@ async def create_annuncio(annuncio_data: AnnuncioCreate, request: Request):
     
     return annuncio_doc
 
+@api_router.get("/annunci/{annuncio_id}/download")
+async def download_allegato_annuncio(annuncio_id: str, request: Request):
+    user = await get_current_user(request)
+    
+    annuncio = await db.annunci.find_one({"_id": ObjectId(annuncio_id)})
+    if not annuncio:
+        raise HTTPException(status_code=404, detail="Annuncio non trovato")
+    
+    if not annuncio.get("allegato_path"):
+        raise HTTPException(status_code=404, detail="Nessun allegato per questo annuncio")
+    
+    # Controllo sede per utenti non super
+    if user["ruolo"] not in ["superadmin", "superuser"]:
+        if annuncio.get("sede_id") and annuncio["sede_id"] != user.get("sede_id"):
+            raise HTTPException(status_code=403, detail="Non autorizzato")
+    
+    filepath = UPLOAD_DIR / annuncio["allegato_path"]
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File non trovato")
+    
+    return FileResponse(filepath, filename=annuncio.get("allegato_filename", "allegato"))
+
 @api_router.delete("/annunci/{annuncio_id}")
 async def delete_annuncio(annuncio_id: str, request: Request):
     user = await get_current_user(request)
@@ -993,9 +1046,17 @@ async def delete_annuncio(annuncio_id: str, request: Request):
     if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
-    result = await db.annunci.delete_one({"_id": ObjectId(annuncio_id)})
-    if result.deleted_count == 0:
+    annuncio = await db.annunci.find_one({"_id": ObjectId(annuncio_id)})
+    if not annuncio:
         raise HTTPException(status_code=404, detail="Annuncio non trovato")
+    
+    # Rimuovi il file fisico se presente
+    if annuncio.get("allegato_path"):
+        filepath = UPLOAD_DIR / annuncio["allegato_path"]
+        if filepath.exists():
+            filepath.unlink()
+    
+    await db.annunci.delete_one({"_id": ObjectId(annuncio_id)})
     
     return {"message": "Annuncio eliminato"}
 
