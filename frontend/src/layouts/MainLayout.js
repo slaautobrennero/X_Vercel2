@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI } from '../lib/utils';
+import ContattiSidebar from '../components/ContattiSidebar';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -109,6 +110,9 @@ export default function MainLayout() {
               );
             })}
           </nav>
+
+          {/* Contatti / Link sezione */}
+          <ContattiSidebar />
 
           {/* User info */}
           <div className="p-4 border-t border-gray-200">

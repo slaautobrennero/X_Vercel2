@@ -243,6 +243,24 @@ class CalcoloKmRequest(BaseModel):
     origine: str  # Indirizzo partenza
     destinazione: str  # Indirizzo arrivo
 
+# --- CONTATTI / LINK SIDEBAR ---
+
+class ContattoBase(BaseModel):
+    """Contatto/Link sidebar - per concessionaria"""
+    titolo: str  # Es: "Ufficio Sede"
+    descrizione: Optional[str] = None  # Es: "Lun-Ven 9-18"
+    tipo: str  # link | whatsapp | telegram | email | telefono
+    valore: str  # URL completo, numero tel, email...
+
+class ContattoCreate(ContattoBase):
+    pass
+
+class ContattoUpdate(BaseModel):
+    titolo: Optional[str] = None
+    descrizione: Optional[str] = None
+    tipo: Optional[str] = None
+    valore: Optional[str] = None
+
 # ==================== AUTH HELPERS ====================
 # Funzioni per autenticazione JWT e gestione password
 
@@ -1203,6 +1221,107 @@ async def delete_annuncio(annuncio_id: str, request: Request):
     await db.annunci.delete_one({"_id": ObjectId(annuncio_id)})
     
     return {"message": "Annuncio eliminato"}
+
+# ==================== CONTATTI / LINK SIDEBAR ROUTES ====================
+
+VALID_CONTATTO_TIPI = ["link", "whatsapp", "telegram", "email", "telefono"]
+EDIT_CONTATTO_ROLES = ["admin", "segretario", "segreteria", "superadmin"]
+
+
+@api_router.get("/contatti")
+async def get_contatti(request: Request):
+    """Restituisce i contatti della sede dell'utente. SuperAdmin/SuperUser vede tutti."""
+    user = await get_current_user(request)
+    
+    query = {}
+    if user["ruolo"] not in ["superadmin", "superuser"]:
+        query["sede_id"] = user.get("sede_id")
+    
+    contatti = []
+    async for c in db.contatti.find(query).sort("ordine", 1):
+        c["id"] = str(c["_id"])
+        c.pop("_id")
+        contatti.append(c)
+    
+    return contatti
+
+
+@api_router.post("/contatti")
+async def create_contatto(contatto_data: ContattoCreate, request: Request):
+    user = await get_current_user(request)
+    
+    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    if contatto_data.tipo not in VALID_CONTATTO_TIPI:
+        raise HTTPException(status_code=400, detail=f"Tipo non valido. Usa: {', '.join(VALID_CONTATTO_TIPI)}")
+    
+    contatto_doc = {
+        "titolo": contatto_data.titolo,
+        "descrizione": contatto_data.descrizione,
+        "tipo": contatto_data.tipo,
+        "valore": contatto_data.valore,
+        "sede_id": user.get("sede_id"),
+        "ordine": 0,
+        "created_by": user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    result = await db.contatti.insert_one(contatto_doc)
+    contatto_doc["id"] = str(result.inserted_id)
+    contatto_doc.pop("_id", None)
+    
+    return contatto_doc
+
+
+@api_router.put("/contatti/{contatto_id}")
+async def update_contatto(contatto_id: str, contatto_data: ContattoUpdate, request: Request):
+    user = await get_current_user(request)
+    
+    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    contatto = await db.contatti.find_one({"_id": ObjectId(contatto_id)})
+    if not contatto:
+        raise HTTPException(status_code=404, detail="Contatto non trovato")
+    
+    # Solo stessa sede (eccetto superadmin)
+    if user["ruolo"] != "superadmin" and contatto.get("sede_id") != user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    
+    update_data = {k: v for k, v in contatto_data.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nessun dato da aggiornare")
+    
+    if "tipo" in update_data and update_data["tipo"] not in VALID_CONTATTO_TIPI:
+        raise HTTPException(status_code=400, detail=f"Tipo non valido. Usa: {', '.join(VALID_CONTATTO_TIPI)}")
+    
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.contatti.update_one({"_id": ObjectId(contatto_id)}, {"$set": update_data})
+    
+    return {"message": "Contatto aggiornato"}
+
+
+@api_router.delete("/contatti/{contatto_id}")
+async def delete_contatto(contatto_id: str, request: Request):
+    user = await get_current_user(request)
+    
+    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    contatto = await db.contatti.find_one({"_id": ObjectId(contatto_id)})
+    if not contatto:
+        raise HTTPException(status_code=404, detail="Contatto non trovato")
+    
+    if user["ruolo"] != "superadmin" and contatto.get("sede_id") != user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    
+    await db.contatti.delete_one({"_id": ObjectId(contatto_id)})
+    
+    return {"message": "Contatto eliminato"}
+
+
 
 # ==================== DOCUMENTI ROUTES ====================
 
