@@ -1,78 +1,82 @@
-# SLA - Portale Sindacato Lavoratori Autostradali
+# Portale SLA — PRD
 
-## Problem Statement
-Sistema di Gestione Sindacale per 30 concessionarie autostradali (A22, CAV, Autostrade, ecc.). Ogni sede deve essere un compartimento stagno con isolamento dati completo.
+## Original Problem
+Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionarie autostradali. Sistema con 8 ruoli (SuperAdmin, SuperUser, Admin, Cassiere, Segretario, Segreteria, Delegato, Iscritto). Funzionalità: registrazione differenziata, rimborsi con calcolo KM via Google Maps, modulistica/documenti (max 5MB), bacheca/comunicati, notifiche, export PDF/Excel. Deploy locale Raspberry Pi 4 (DietPi) con Docker.
 
-## Architecture
-- **Backend**: FastAPI + MongoDB
-- **Frontend**: React + Tailwind CSS
-- **Auth**: JWT con httpOnly cookies, protezione brute force
-- **Database**: MongoDB con collezioni: users, sedi, rimborsi, annunci, documenti, notifiche, motivi_rimborso
+## Tech Stack
+- Frontend: React + Tailwind + shadcn/ui
+- Backend: FastAPI + MongoDB
+- Deploy: Docker Compose su Raspberry Pi 4
+- Hosting pubblico: Cloudflare Tunnel + dominio Aruba `portale-sla.it`
+- Backup automatico: rclone → Google Drive (cron 03:00)
+- Maps: Google Directions API
 
-## User Personas & Ruoli
-| Ruolo | Bacheca | Documenti | Rimborsi | Gestione Rimborsi | Gestione Sede |
-|-------|---------|-----------|----------|-------------------|---------------|
-| Iscritto | ✅ Legge | ✅ Scarica | ❌ | ❌ | ❌ |
-| Delegato | ✅ Legge | ✅ Scarica | ✅ Inserisce | ❌ | ❌ |
-| Segreteria | ✅ Legge/Scrive | ✅ Carica | ✅ Inserisce | ❌ | ❌ |
-| Segretario | ✅ Legge/Scrive | ✅ Carica | ✅ Inserisce | ⚠️ Sua sede | ⚠️ Sua sede |
-| Admin | ✅ Tutto | ✅ Tutto | ✅ Tutto | ✅ Sua sede | ✅ Sua sede |
-| SuperUser | ✅ Legge tutto | ✅ Legge tutto | ✅ Legge tutto | ❌ | ❌ |
-| SuperAdmin | ✅ Tutto | ✅ Tutto | ✅ Tutto | ✅ Tutte | ✅ Tutte |
+## Stato attuale
+✅ Online su https://portale-sla.it via Cloudflare Tunnel (HTTPS)  
+✅ Tunnel configurato come servizio systemd (auto-start)  
+✅ Backup automatici GDrive  
+✅ Login funzionante (SuperAdmin)
 
-## Core Requirements
-1. ✅ Registrazione multi-ruolo con dati personali (email, telefono, IBAN, indirizzo)
-2. ✅ Isolamento dati per sede (compartimento stagno)
-3. ✅ Gestione Rimborsi con calcolo automatico (KM, pasti, autostrada)
-4. ✅ Bulletin Board per annunci
-5. ✅ Modulistica e Documenti (upload PDF/JPG, max 5MB)
-6. ✅ Notifiche in-app
-7. ✅ Configurazione tariffe per sede
+## Ruoli
+- **SuperAdmin / SuperUser**: tutto, multi-sede
+- **Admin**: gestione completa concessionaria (rimborsi, utenti, contatti, bacheca)
+- **Cassiere** (NUOVO 28/04): come admin sui rimborsi (approva, paga, vede report)
+- **Segretario**: gestione utenti, contatti, bacheca, documenti
+- **Segreteria**: contatti, bacheca, documenti
+- **Delegato**: solo creazione/visualizzazione propri rimborsi
+- **Iscritto**: solo bacheca/documenti, niente rimborsi
 
-## What's Been Implemented (04/01/2026)
-### Backend
-- ✅ Auth JWT completa (login, register, logout, refresh)
-- ✅ CRUD Sedi con tariffe personalizzate
-- ✅ CRUD Rimborsi con calcolo automatico importi
-- ✅ Upload ricevute e contabili
-- ✅ CRUD Annunci (Bacheca)
-- ✅ CRUD Documenti con categorizzazione
-- ✅ Sistema Notifiche
-- ✅ Gestione Utenti con cambio ruolo
-- ✅ Report rimborsi annuali
+## Modello dati chiave
+- `users`: email, password_hash, ruolo, sede_id, nome, cognome, iban, indirizzo
+- `sedi`: nome, codice, indirizzo, tariffa_km, rimborso_pasti, rimborso_autostrada
+- `motivi_rimborso`: nome, richiede_note
+- `rimborsi`: user_id, sede_id, data, motivo_id, km, importi, stato (in_attesa→approvato→pagato | rifiutato), contabile, ricevute_spese, pagato_by_nome
+- `annunci`: titolo, contenuto, link_documento, allegato_filename, allegato_path, sede_id, autore
+- `documenti`: nome, categoria, descrizione, filename, path, sede_id
+- `notifiche`: user_id, sede_id, tipo, titolo, messaggio, letto
+- `contatti` (NUOVO): titolo, descrizione, tipo (link|whatsapp|telegram|email|telefono), valore, sede_id
 
-### Frontend
-- ✅ Login/Register con branding SLA
-- ✅ Dashboard con statistiche
-- ✅ Pagina Bacheca
-- ✅ Pagina Documenti con filtri categoria
-- ✅ Pagina Rimborsi con form completo
-- ✅ Pagina Notifiche
-- ✅ Pagina Utenti (admin)
-- ✅ Pagina Sedi (superadmin)
-- ✅ Pagina Profilo
+## Flusso Rimborsi (aggiornato 28/04)
+```
+Iscritto → "in_attesa" (BIANCO)
+                ↓
+Admin/Cassiere approva  → "approvato" (GIALLO) → carica contabile → "pagato" (VERDE)
+Admin/Cassiere rifiuta  → "rifiutato" (ROSSO)
+Admin/Cassiere paga diretto (con contabile) → "pagato" (VERDE)
+```
+- Contabile **obbligatoria** per arrivare a "pagato"
+- Notifiche: nuovo rimborso → Admin + Cassiere; approvato/rifiutato → utente; pagato → utente + admin + cassiere
 
-## Sedi Pre-caricate
-- A22 - Autostrada del Brennero (€0.35/km, €15 pasti)
-- CAV - Concessioni Autostradali Venete (€0.30/km, €12 pasti)
-- ASPI - Autostrade per l'Italia (€0.40/km, €18 pasti)
+## Backlog prossime sessioni
+1. Favicon SLA tab
+2. Mostra valore contatto + copia
+3. Reset password (admin/segretario)
+4. Cancella + disattiva utente
+5. Cambio password da Profilo
+6. Password dimenticata via email
+7. Storico azioni admin (audit log)
+8. Filtri/ricerca rimborsi
+9. Export PDF/Excel rendiconti
+10. Email notifica rimborso pagato (no contabile)
+11. Auto-logout 30 min
+12. PWA installabile
+13. Conferma email registrazione
+14. GDPR (consenso + export + cancellazione)
+15. Multi-allegati ricevute con anteprima
+16. Promemoria rimborsi pendenti (>7gg)
+17. Ricerca globale
+18. Storico variazioni rimborsi
 
-## Backlog P0/P1/P2
-### P0 (Critico)
-- Nessuno
-
-### P1 (Importante)
-- [ ] Export CSV/Excel rendiconti annuali
-- [ ] Filtro rimborsi per periodo
-- [ ] Gestione motivi rimborso da UI
-
-### P2 (Nice to have)
-- [ ] Dashboard con grafici (Recharts)
-- [ ] Notifiche push/email
-- [ ] Storico modifiche rimborsi
-- [ ] Multi-lingua
-
-## Next Tasks
-1. Aggiungere altre 27 sedi concessionarie
-2. Test con utenti reali di diverse sedi
-3. Export rendiconti in PDF/Excel
+## Endpoint principali
+- `/api/auth/login`, `/api/auth/register`, `/api/auth/logout`
+- `/api/sedi`, `/api/motivi-rimborso`
+- `/api/rimborsi` (GET/POST/PUT)
+- `/api/rimborsi/{id}/contabile` (pagamento + upload obbligatorio)
+- `/api/rimborsi/{id}/ricevute`, `/ricevute-spese`
+- `/api/calcola-km` (Google Directions)
+- `/api/annunci` (con allegato file), `/api/annunci/{id}/download`
+- `/api/documenti` (upload), `/api/documenti/{id}/download`
+- `/api/notifiche`
+- `/api/contatti` (CRUD) — NUOVO
+- `/api/users`, `/api/users/{id}/ruolo`
+- `/api/reports/rimborsi-annuali`, `/rimborsi-export`
