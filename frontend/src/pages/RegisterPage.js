@@ -26,15 +26,32 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [sedi, setSedi] = useState([]);
+  const [sediLoading, setSediLoading] = useState(true);
+  const [sediError, setSediError] = useState('');
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const isDelegato = formData.ruolo === 'delegato';
 
-  useEffect(() => {
+  const fetchSedi = () => {
+    setSediLoading(true);
+    setSediError('');
     axios.get(`${API}/sedi`)
-      .then(res => setSedi(res.data))
-      .catch(() => {});
+      .then(res => {
+        setSedi(res.data || []);
+        if (!res.data || res.data.length === 0) {
+          setSediError('Nessuna concessionaria disponibile. Contatta l\'amministratore.');
+        }
+      })
+      .catch((err) => {
+        setSediError('Impossibile caricare le concessionarie. Verifica la connessione e riprova.');
+        console.error('Errore fetch sedi:', err);
+      })
+      .finally(() => setSediLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSedi();
   }, []);
 
   const handleChange = (e) => {
@@ -203,14 +220,30 @@ export default function RegisterPage() {
                 value={formData.sede_id}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none"
+                disabled={sediLoading || sedi.length === 0}
+                className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                 data-testid="register-sede-select"
               >
-                <option value="">Seleziona la tua sede</option>
+                <option value="">
+                  {sediLoading ? 'Caricamento concessionarie...' : (sedi.length === 0 ? 'Nessuna concessionaria disponibile' : 'Seleziona la tua sede')}
+                </option>
                 {sedi.map(sede => (
                   <option key={sede.id} value={sede.id}>{sede.nome}</option>
                 ))}
               </select>
+              {sediError && (
+                <div className="mt-2 flex items-center justify-between gap-2 p-2 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm text-red-700">{sediError}</p>
+                  <button
+                    type="button"
+                    onClick={fetchSedi}
+                    className="text-sm text-[#1E4D8C] font-medium hover:underline whitespace-nowrap"
+                    data-testid="retry-sedi-btn"
+                  >
+                    Riprova
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
