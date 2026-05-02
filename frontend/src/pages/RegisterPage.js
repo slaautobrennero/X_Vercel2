@@ -36,7 +36,7 @@ export default function RegisterPage() {
   const fetchSedi = () => {
     setSediLoading(true);
     setSediError('');
-    axios.get(`${API}/sedi`)
+    axios.get(`${API}/sedi`, { withCredentials: false })
       .then(res => {
         setSedi(res.data || []);
         if (!res.data || res.data.length === 0) {
