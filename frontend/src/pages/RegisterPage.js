@@ -109,12 +109,14 @@ export default function RegisterPage() {
     <div className="min-h-screen flex" data-testid="register-page">
       {/* Left side - Background */}
       <div 
-        className="hidden lg:block lg:w-2/5 bg-cover bg-center"
-        style={{ 
-          backgroundImage: 'url(https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/9qoxl0rw_Full%20logo.png)',
-          backgroundColor: '#1E4D8C'
-        }}
-      />
+        className="hidden lg:flex lg:w-2/5 items-center justify-center bg-[#1E4D8C] p-12"
+      >
+        <img 
+          src="https://customer-assets.emergentagent.com/job_portale-rimborsi/artifacts/9qoxl0rw_Full%20logo.png"
+          alt="SLA - Sindacato Lavoratori Autostradali"
+          className="max-w-full max-h-[80vh] object-contain"
+        />
+      </div>
 
       {/* Right side - Form */}
       <div className="flex-1 flex items-center justify-center bg-white px-8 py-12 overflow-y-auto">

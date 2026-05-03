@@ -1730,7 +1730,10 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
+    allow_origin_regex=os.environ.get(
+        "FRONTEND_ORIGIN_REGEX",
+        r"https?://(www\.)?(portale-sla\.it|localhost(:\d+)?|192\.168\.\d+\.\d+(:\d+)?)"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
