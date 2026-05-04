@@ -66,6 +66,10 @@ Admin/Cassiere paga diretto (con contabile) → "pagato" (VERDE)
 16. Promemoria rimborsi pendenti (>7gg)
 17. Ricerca globale
 18. Storico variazioni rimborsi
+19. Backup DB cifrato (password SuperAdmin) + backup uploads separato non cifrato
+20. Pulizia Docker automatica settimanale (immagini/cache orfane)
+21. Banner "manutenzione programmata" 30 min prima backup/pulizia
+22. Verificare path esatto volume uploads (4-5 file utente presenti)
 
 ## Endpoint principali
 - `/api/auth/login`, `/api/auth/register`, `/api/auth/logout`
