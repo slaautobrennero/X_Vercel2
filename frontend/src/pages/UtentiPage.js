@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, formatDate } from '../lib/utils';
 import axios from 'axios';
-import { Users, Search, Edit, Shield } from 'lucide-react';
+import { Users, Search, Shield, KeyRound, Copy, X, Check } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,8 +12,13 @@ export default function UtentiPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [resetUser, setResetUser] = useState(null);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isSuperAdmin = user?.ruolo === 'superadmin';
+  const canResetPassword = ['admin', 'segretario', 'superadmin'].includes(user?.ruolo);
 
   useEffect(() => {
     fetchUsers();
@@ -40,6 +45,44 @@ export default function UtentiPage() {
     } catch (error) {
       console.error('Error updating role:', error);
       alert(error.response?.data?.detail || 'Errore durante l\'aggiornamento');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetUser) return;
+    setResetLoading(true);
+    try {
+      const res = await axios.post(`${API}/users/${resetUser.id}/reset-password`);
+      setResetResult(res.data);
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Errore durante il reset password');
+      setResetUser(null);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const closeResetModal = () => {
+    setResetUser(null);
+    setResetResult(null);
+    setCopied(false);
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      // Fallback per browser senza clipboard API
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -125,13 +168,26 @@ export default function UtentiPage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{u.sede_nome || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{formatDate(u.created_at)}</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setSelectedUser(u)}
-                        className="p-2 text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"
-                        data-testid={`edit-user-${u.id}`}
-                      >
-                        <Shield size={18} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setSelectedUser(u)}
+                          className="p-2 text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"
+                          title="Modifica ruolo"
+                          data-testid={`edit-user-${u.id}`}
+                        >
+                          <Shield size={18} />
+                        </button>
+                        {canResetPassword && !['superadmin', 'superuser'].includes(u.ruolo) && u.id !== user?.id && (
+                          <button
+                            onClick={() => setResetUser(u)}
+                            className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
+                            title="Reset password"
+                            data-testid={`reset-password-${u.id}`}
+                          >
+                            <KeyRound size={18} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -176,6 +232,84 @@ export default function UtentiPage() {
               >
                 Chiudi
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Reset Password Modal */}
+      {resetUser && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <KeyRound size={20} className="text-orange-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Reset Password</h2>
+              </div>
+              <button onClick={closeResetModal} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              {!resetResult ? (
+                <>
+                  <p className="text-gray-700 mb-2">
+                    Sei sicuro di voler reimpostare la password di:
+                  </p>
+                  <div className="bg-gray-50 rounded-md p-3 mb-4">
+                    <p className="font-medium text-gray-900">{resetUser.nome} {resetUser.cognome}</p>
+                    <p className="text-sm text-gray-600">{resetUser.email}</p>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-md p-3 text-sm text-orange-800 mb-4">
+                    Verrà generata una password temporanea che dovrai comunicare all'utente. L'utente sarà obbligato a cambiarla al primo accesso.
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={closeResetModal}
+                      className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      onClick={handleResetPassword}
+                      disabled={resetLoading}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition-colors disabled:opacity-50"
+                      data-testid="confirm-reset-btn"
+                    >
+                      {resetLoading ? 'Reset in corso...' : 'Conferma Reset'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-md p-3 mb-4 text-sm text-green-800">
+                    ✓ Password reimpostata con successo!
+                  </div>
+                  <p className="text-sm text-gray-700 mb-2">
+                    <strong>Comunica questa password all'utente:</strong>
+                  </p>
+                  <div className="bg-gray-900 text-green-400 font-mono text-lg p-4 rounded-md mb-2 text-center select-all" data-testid="temp-password-display">
+                    {resetResult.temporary_password}
+                  </div>
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      onClick={() => copyToClipboard(resetResult.temporary_password)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#1E4D8C] hover:bg-[#163A6A] text-white rounded-md text-sm transition-colors"
+                      data-testid="copy-password-btn"
+                    >
+                      {copied ? <><Check size={16} /> Copiata!</> : <><Copy size={16} /> Copia password</>}
+                    </button>
+                  </div>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-xs text-yellow-800 mb-4">
+                    ⚠️ Questa password è mostrata <strong>una sola volta</strong>. Salvala o copiala adesso. L'utente dovrà cambiarla al primo accesso.
+                  </div>
+                  <button
+                    onClick={closeResetModal}
+                    className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded-md transition-colors"
+                  >
+                    Chiudi
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1,13 +1,24 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI } from '../lib/utils';
 import axios from 'axios';
-import { User, Mail, Phone, MapPin, CreditCard, Save } from 'lucide-react';
+import { User, Mail, Phone, MapPin, CreditCard, Save, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// Validazione password lato client (specchia regole backend)
+function validatePassword(pwd) {
+  if (pwd.length < 8) return 'La password deve avere almeno 8 caratteri';
+  if (!/[A-Za-z]/.test(pwd)) return 'La password deve contenere almeno una lettera';
+  if (!/\d/.test(pwd)) return 'La password deve contenere almeno un numero';
+  if (!/[^A-Za-z0-9]/.test(pwd)) return 'La password deve contenere almeno un carattere speciale';
+  return null;
+}
+
 export default function ProfiloPage() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     nome: user?.nome || '',
     cognome: user?.cognome || '',
@@ -19,6 +30,13 @@ export default function ProfiloPage() {
   });
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // Stato cambio password
+  const [pwdData, setPwdData] = useState({ current: '', next: '', confirm: '' });
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [pwdError, setPwdError] = useState('');
+  const [pwdSubmitting, setPwdSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,12 +55,60 @@ export default function ProfiloPage() {
     }
   };
 
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwdError('');
+
+    if (pwdData.next !== pwdData.confirm) {
+      setPwdError('Le nuove password non coincidono');
+      return;
+    }
+
+    const validationErr = validatePassword(pwdData.next);
+    if (validationErr) {
+      setPwdError(validationErr);
+      return;
+    }
+
+    if (pwdData.current === pwdData.next) {
+      setPwdError('La nuova password deve essere diversa dall\'attuale');
+      return;
+    }
+
+    setPwdSubmitting(true);
+    try {
+      await axios.post(`${API}/auth/change-password`, {
+        current_password: pwdData.current,
+        new_password: pwdData.next
+      });
+      alert('Password aggiornata con successo. Effettua nuovamente il login.');
+      try { await logout(); } catch (_) {}
+      navigate('/login');
+    } catch (error) {
+      setPwdError(error.response?.data?.detail || 'Errore durante il cambio password');
+    } finally {
+      setPwdSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6" data-testid="profilo-page">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 font-['Manrope']">Profilo</h1>
         <p className="text-gray-600 mt-1">Gestisci le tue informazioni personali</p>
       </div>
+
+      {user?.must_change_password && (
+        <div className="bg-orange-50 border border-orange-300 rounded-lg p-4 flex items-start gap-3" data-testid="must-change-password-banner">
+          <Lock size={20} className="text-orange-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-orange-900">Cambio password obbligatorio</p>
+            <p className="text-sm text-orange-800 mt-1">
+              La tua password è stata reimpostata da un amministratore. Per sicurezza, cambiala subito qui sotto.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* User Card */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -182,7 +248,123 @@ export default function ProfiloPage() {
             </button>
           </div>
         </form>
+      </div>      {/* Card Cambio Password */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6" data-testid="change-password-card">
+        <div className="flex items-center gap-2 mb-2">
+          <Lock size={18} className="text-[#1E4D8C]" />
+          <h2 className="text-lg font-semibold text-gray-900">Cambia password</h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Per sicurezza, dopo il cambio dovrai effettuare nuovamente il login.
+        </p>
+
+        {pwdError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm flex items-start gap-2">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <span>{pwdError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password attuale *</label>
+            <div className="relative">
+              <input
+                type={showCurrent ? 'text' : 'password'}
+                value={pwdData.current}
+                onChange={(e) => setPwdData(prev => ({ ...prev, current: e.target.value }))}
+                required
+                autoComplete="current-password"
+                className="w-full border border-gray-300 rounded-md px-4 py-2 pr-10 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                data-testid="current-password-input"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrent(!showCurrent)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                tabIndex={-1}
+              >
+                {showCurrent ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nuova password *</label>
+              <div className="relative">
+                <input
+                  type={showNext ? 'text' : 'password'}
+                  value={pwdData.next}
+                  onChange={(e) => setPwdData(prev => ({ ...prev, next: e.target.value }))}
+                  required
+                  autoComplete="new-password"
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 pr-10 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                  data-testid="new-password-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNext(!showNext)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  tabIndex={-1}
+                >
+                  {showNext ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Conferma nuova password *</label>
+              <input
+                type={showNext ? 'text' : 'password'}
+                value={pwdData.confirm}
+                onChange={(e) => setPwdData(prev => ({ ...prev, confirm: e.target.value }))}
+                required
+                autoComplete="new-password"
+                className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+                data-testid="confirm-password-input"
+              />
+            </div>
+          </div>
+
+          {/* Indicatori requisiti password */}
+          <PasswordRequirements password={pwdData.next} />
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={pwdSubmitting}
+              className="flex items-center gap-2 bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-6 py-2 transition-colors disabled:opacity-50"
+              data-testid="submit-change-password-btn"
+            >
+              <Lock size={18} />
+              {pwdSubmitting ? 'Salvataggio...' : 'Cambia password'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
+  );
+}
+
+// Componente helper per visualizzare requisiti password con check verde/rosso
+function PasswordRequirements({ password }) {
+  const checks = [
+    { test: password.length >= 8, label: 'Almeno 8 caratteri' },
+    { test: /[A-Za-z]/.test(password), label: 'Almeno una lettera' },
+    { test: /\d/.test(password), label: 'Almeno un numero' },
+    { test: /[^A-Za-z0-9]/.test(password), label: 'Almeno un carattere speciale (!@#$%...)' },
+  ];
+
+  if (!password) return null;
+
+  return (
+    <ul className="text-xs space-y-1 mt-1" data-testid="password-requirements">
+      {checks.map((c, i) => (
+        <li key={i} className={`flex items-center gap-1.5 ${c.test ? 'text-green-700' : 'text-gray-500'}`}>
+          {c.test ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+          {c.label}
+        </li>
+      ))}
+    </ul>
   );
 }

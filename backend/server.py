@@ -44,6 +44,7 @@ from bson import ObjectId
 # Standard library
 import os
 import logging
+import re
 import secrets
 import io
 import csv
@@ -273,6 +274,43 @@ def hash_password(password: str) -> str:
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 
+def validate_password_strength(password: str) -> None:
+    """
+    Valida che la password soddisfi i requisiti minimi:
+    - Almeno 8 caratteri
+    - Almeno 1 lettera
+    - Almeno 1 numero
+    - Almeno 1 carattere speciale
+    Solleva HTTPException(400) se non valida.
+    """
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="La password deve avere almeno 8 caratteri")
+    if not re.search(r"[A-Za-z]", password):
+        raise HTTPException(status_code=400, detail="La password deve contenere almeno una lettera")
+    if not re.search(r"\d", password):
+        raise HTTPException(status_code=400, detail="La password deve contenere almeno un numero")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise HTTPException(status_code=400, detail="La password deve contenere almeno un carattere speciale")
+
+def generate_temporary_password(length: int = 12) -> str:
+    """
+    Genera una password temporanea casuale che soddisfa i requisiti.
+    """
+    import string
+    letters = string.ascii_letters
+    digits = string.digits
+    specials = "!@#$%&*"
+    # Almeno 1 di ogni
+    base = [
+        secrets.choice(letters),
+        secrets.choice(digits),
+        secrets.choice(specials),
+    ]
+    pool = letters + digits + specials
+    base += [secrets.choice(pool) for _ in range(length - len(base))]
+    secrets.SystemRandom().shuffle(base)
+    return "".join(base)
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify password against hash
@@ -441,6 +479,9 @@ async def register(user_data: UserCreate, response: Response):
     """
     email = user_data.email.lower()
     
+    # Valida la password (8 char, lettera+numero+speciale)
+    validate_password_strength(user_data.password)
+    
     # Check email già registrata
     existing = await db.users.find_one({"email": email})
     if existing:
@@ -577,6 +618,101 @@ async def refresh_token(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Token scaduto")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
+
+
+# ==================== PASSWORD CHANGE / RESET ====================
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@api_router.post("/auth/change-password")
+async def change_password(data: ChangePasswordRequest, request: Request, response: Response):
+    """
+    Utente loggato cambia la propria password.
+    Richiede password attuale. Forza re-login dopo il cambio.
+    """
+    user = await get_current_user(request)
+    
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    
+    if not verify_password(data.current_password, user_doc["password_hash"]):
+        raise HTTPException(status_code=400, detail="Password attuale non corretta")
+    
+    if data.current_password == data.new_password:
+        raise HTTPException(status_code=400, detail="La nuova password deve essere diversa da quella attuale")
+    
+    validate_password_strength(data.new_password)
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$set": {
+            "password_hash": hash_password(data.new_password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "must_change_password": False
+        }}
+    )
+    
+    # Forza re-login
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    
+    return {"message": "Password aggiornata. Effettua nuovamente il login per sicurezza."}
+
+
+@api_router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, request: Request):
+    """
+    Admin/Segretario/SuperAdmin genera password temporanea per un utente.
+    Restituisce la password in chiaro (mostrata UNA SOLA VOLTA).
+    """
+    current_user = await get_current_user(request)
+    
+    if current_user["ruolo"] not in ["admin", "segretario", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    
+    if current_user["ruolo"] != "superadmin":
+        if target_user.get("sede_id") != current_user.get("sede_id"):
+            raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+        if target_user.get("ruolo") in ["superadmin", "superuser"]:
+            raise HTTPException(status_code=403, detail="Non autorizzato a resettare questo ruolo")
+    
+    temp_password = generate_temporary_password(12)
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "password_hash": hash_password(temp_password),
+            "password_reset_at": datetime.now(timezone.utc).isoformat(),
+            "password_reset_by": current_user["id"],
+            "must_change_password": True
+        }}
+    )
+    
+    # Notifica all'utente
+    await db.notifiche.insert_one({
+        "user_id": user_id,
+        "sede_id": target_user.get("sede_id"),
+        "tipo": "sicurezza",
+        "titolo": "Password reimpostata",
+        "messaggio": f"La tua password è stata reimpostata da {current_user['nome']} {current_user['cognome']}. Accedi con la nuova password ricevuta e cambiala al primo accesso.",
+        "letto": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {
+        "message": "Password reimpostata con successo",
+        "temporary_password": temp_password,
+        "user_email": target_user["email"]
+    }
+
 
 # ==================== GOOGLE MAPS ====================
 
