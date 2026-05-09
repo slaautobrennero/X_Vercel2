@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, formatDate } from '../lib/utils';
 import axios from 'axios';
-import { Users, Search, Shield, KeyRound, Copy, X, Check } from 'lucide-react';
+import { Users, Search, Shield, KeyRound, Copy, X, Check, Power, Trash2, AlertTriangle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -17,8 +17,16 @@ export default function UtentiPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Stato disattiva/cancella
+  const [toggleUser, setToggleUser] = useState(null);
+  const [toggleLoading, setToggleLoading] = useState(false);
+  const [deleteUser, setDeleteUser] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const isSuperAdmin = user?.ruolo === 'superadmin';
   const canResetPassword = ['admin', 'segretario', 'superadmin'].includes(user?.ruolo);
+  const canToggleDisabled = ['admin', 'segretario', 'superadmin'].includes(user?.ruolo);
 
   useEffect(() => {
     fetchUsers();
@@ -66,6 +74,37 @@ export default function UtentiPage() {
     setResetUser(null);
     setResetResult(null);
     setCopied(false);
+  };
+
+  const handleToggleDisabled = async () => {
+    if (!toggleUser) return;
+    setToggleLoading(true);
+    try {
+      await axios.put(`${API}/users/${toggleUser.id}/toggle-disabled`, {
+        disabled: !toggleUser.disabled
+      });
+      fetchUsers();
+      setToggleUser(null);
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Errore durante l\'operazione');
+    } finally {
+      setToggleLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUser || deleteConfirmText !== 'ELIMINA') return;
+    setDeleteLoading(true);
+    try {
+      await axios.delete(`${API}/users/${deleteUser.id}`);
+      fetchUsers();
+      setDeleteUser(null);
+      setDeleteConfirmText('');
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Errore durante la cancellazione');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const copyToClipboard = async (text) => {
@@ -142,13 +181,20 @@ export default function UtentiPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-gray-50" data-testid={`user-row-${u.id}`}>
+                  <tr key={u.id} className={`hover:bg-gray-50 ${u.disabled ? 'opacity-60 bg-gray-50' : ''}`} data-testid={`user-row-${u.id}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#1E4D8C] flex items-center justify-center text-white text-sm font-medium">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${u.disabled ? 'bg-gray-400' : 'bg-[#1E4D8C]'}`}>
                           {u.nome?.[0]}{u.cognome?.[0]}
                         </div>
-                        <span className="font-medium text-gray-900">{u.nome} {u.cognome}</span>
+                        <div>
+                          <span className="font-medium text-gray-900">{u.nome} {u.cognome}</span>
+                          {u.disabled && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                              Disattivato
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
@@ -185,6 +231,30 @@ export default function UtentiPage() {
                             data-testid={`reset-password-${u.id}`}
                           >
                             <KeyRound size={18} />
+                          </button>
+                        )}
+                        {canToggleDisabled && !['superadmin', 'superuser'].includes(u.ruolo) && u.id !== user?.id && (
+                          <button
+                            onClick={() => setToggleUser(u)}
+                            className={`p-2 rounded-md transition-colors ${
+                              u.disabled
+                                ? 'text-green-600 hover:bg-green-50'
+                                : 'text-gray-600 hover:text-yellow-600 hover:bg-yellow-50'
+                            }`}
+                            title={u.disabled ? 'Riattiva utente' : 'Disattiva utente'}
+                            data-testid={`toggle-disabled-${u.id}`}
+                          >
+                            <Power size={18} />
+                          </button>
+                        )}
+                        {isSuperAdmin && u.id !== user?.id && (
+                          <button
+                            onClick={() => setDeleteUser(u)}
+                            className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Cancella definitivamente"
+                            data-testid={`delete-user-${u.id}`}
+                          >
+                            <Trash2 size={18} />
                           </button>
                         )}
                       </div>
@@ -310,6 +380,120 @@ export default function UtentiPage() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Toggle Disable Modal */}
+      {toggleUser && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Power size={20} className={toggleUser.disabled ? 'text-green-600' : 'text-yellow-600'} />
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {toggleUser.disabled ? 'Riattiva utente' : 'Disattiva utente'}
+                </h2>
+              </div>
+              <button onClick={() => setToggleUser(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-gray-50 rounded-md p-3 mb-4">
+                <p className="font-medium text-gray-900">{toggleUser.nome} {toggleUser.cognome}</p>
+                <p className="text-sm text-gray-600">{toggleUser.email}</p>
+              </div>
+              {toggleUser.disabled ? (
+                <p className="text-sm text-gray-700 mb-4">
+                  Riattivando l'utente potrà nuovamente effettuare il login e usare il portale.
+                </p>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm text-yellow-800 mb-4">
+                  L'utente disattivato non potrà più effettuare il login. I suoi dati e rimborsi storici resteranno intatti. Operazione reversibile.
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setToggleUser(null)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleToggleDisabled}
+                  disabled={toggleLoading}
+                  className={`px-4 py-2 text-white rounded-md transition-colors disabled:opacity-50 ${
+                    toggleUser.disabled
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-yellow-600 hover:bg-yellow-700'
+                  }`}
+                  data-testid="confirm-toggle-btn"
+                >
+                  {toggleLoading ? 'Operazione...' : (toggleUser.disabled ? 'Riattiva' : 'Disattiva')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal (solo SuperAdmin) */}
+      {deleteUser && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={20} className="text-red-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Cancella utente definitivamente</h2>
+              </div>
+              <button onClick={() => { setDeleteUser(null); setDeleteConfirmText(''); }} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-gray-50 rounded-md p-3 mb-4">
+                <p className="font-medium text-gray-900">{deleteUser.nome} {deleteUser.cognome}</p>
+                <p className="text-sm text-gray-600">{deleteUser.email}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-800 mb-4">
+                <p className="font-medium mb-2">⚠️ Operazione irreversibile</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>L'utente sarà cancellato definitivamente dal sistema</li>
+                  <li>I rimborsi e annunci storici resteranno con dicitura "[utente eliminato]"</li>
+                  <li>Le notifiche personali saranno eliminate</li>
+                  <li>Per disattivare temporaneamente usa l'icona Power invece</li>
+                </ul>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Per confermare scrivi <code className="bg-gray-100 px-1 rounded font-mono">ELIMINA</code> qui sotto:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="ELIMINA"
+                  className="w-full border border-gray-300 rounded-md px-4 py-2 focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none"
+                  data-testid="delete-confirm-input"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setDeleteUser(null); setDeleteConfirmText(''); }}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleDeleteUser}
+                  disabled={deleteLoading || deleteConfirmText !== 'ELIMINA'}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="confirm-delete-btn"
+                >
+                  {deleteLoading ? 'Cancellazione...' : 'Cancella definitivamente'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -516,6 +516,7 @@ async def register(user_data: UserCreate, response: Response):
         "iban": user_data.iban if ruolo != "iscritto" else None,
         "ruolo": ruolo,
         "sede_id": user_data.sede_id,
+        "disabled": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -555,6 +556,10 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
             upsert=True
         )
         raise HTTPException(status_code=401, detail="Credenziali non valide")
+    
+    # Blocca login se utente disattivato
+    if user.get("disabled", False):
+        raise HTTPException(status_code=403, detail="Account disattivato. Contatta l'amministratore.")
     
     await db.login_attempts.delete_one({"identifier": identifier})
     
@@ -712,6 +717,92 @@ async def admin_reset_password(user_id: str, request: Request):
         "temporary_password": temp_password,
         "user_email": target_user["email"]
     }
+
+
+# ==================== DISATTIVA / CANCELLA UTENTE ====================
+
+class ToggleDisableRequest(BaseModel):
+    disabled: bool
+
+
+@api_router.put("/users/{user_id}/toggle-disabled")
+async def toggle_user_disabled(user_id: str, data: ToggleDisableRequest, request: Request):
+    """
+    Admin/Segretario/SuperAdmin disattiva o riattiva un utente (soft).
+    Utente disattivato non può loggarsi ma i dati storici restano intatti.
+    """
+    current_user = await get_current_user(request)
+    
+    if current_user["ruolo"] not in ["admin", "segretario", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Non puoi disattivare il tuo stesso account")
+    
+    target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    
+    if current_user["ruolo"] != "superadmin":
+        if target_user.get("sede_id") != current_user.get("sede_id"):
+            raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+        if target_user.get("ruolo") in ["superadmin", "superuser"]:
+            raise HTTPException(status_code=403, detail="Non autorizzato a modificare questo ruolo")
+    
+    update_fields = {
+        "disabled": data.disabled,
+        "disabled_at": datetime.now(timezone.utc).isoformat() if data.disabled else None,
+        "disabled_by": current_user["id"] if data.disabled else None,
+    }
+    
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
+    
+    return {
+        "message": "Utente disattivato" if data.disabled else "Utente riattivato",
+        "disabled": data.disabled
+    }
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, request: Request):
+    """
+    Cancellazione definitiva utente. Solo SuperAdmin.
+    Rimborsi/annunci/documenti restano ma con riferimento "[utente eliminato]".
+    """
+    current_user = await get_current_user(request)
+    
+    if current_user["ruolo"] != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo SuperAdmin può cancellare definitivamente gli utenti")
+    
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Non puoi cancellare il tuo stesso account")
+    
+    target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    
+    user_label = "[utente eliminato]"
+    
+    # Anonimizza riferimenti nei rimborsi (manteniamo storico)
+    await db.rimborsi.update_many(
+        {"user_id": user_id},
+        {"$set": {"user_nome": user_label, "user_eliminato": True}}
+    )
+    
+    # Anonimizza autore in annunci
+    await db.annunci.update_many(
+        {"autore_id": user_id},
+        {"$set": {"autore_nome": user_label, "autore_eliminato": True}}
+    )
+    
+    # Cancella notifiche dirette all'utente
+    await db.notifiche.delete_many({"user_id": user_id})
+    
+    # Cancella utente
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    
+    return {"message": "Utente cancellato definitivamente"}
+
 
 
 # ==================== GOOGLE MAPS ====================
