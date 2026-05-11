@@ -44,6 +44,7 @@ import DocumentiPage from './pages/DocumentiPage';
 import RimborsiPage from './pages/RimborsiPage';
 import NotifichePage from './pages/NotifichePage';
 import UtentiPage from './pages/UtentiPage';
+import AuditLogPage from './pages/AuditLogPage';
 import SediPage from './pages/SediPage';
 import ProfiloPage from './pages/ProfiloPage';
 import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
@@ -140,6 +141,11 @@ function AppRoutes() {
         <Route path="utenti" element={
           <ProtectedRoute allowedRoles={['segretario', 'admin', 'superadmin', 'superuser']}>
             <UtentiPage />
+          </ProtectedRoute>
+        } />
+        <Route path="audit-log" element={
+          <ProtectedRoute allowedRoles={['admin', 'cassiere', 'segretario', 'superadmin', 'superuser']}>
+            <AuditLogPage />
           </ProtectedRoute>
         } />
         <Route path="sedi" element={

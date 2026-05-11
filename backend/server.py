@@ -461,6 +461,50 @@ async def _notify_all_in_sede(sede_id: Optional[str], notifica_data: dict, exclu
 
 
 
+# ==================== AUDIT LOG HELPERS ====================
+
+async def _log_audit(
+    actor: dict,
+    action: str,
+    target_type: str,
+    target_id: Optional[str] = None,
+    target_label: Optional[str] = None,
+    sede_id: Optional[str] = None,
+    old_value: Optional[str] = None,
+    new_value: Optional[str] = None,
+    note: Optional[str] = None,
+):
+    """
+    Registra un'azione nell'audit log.
+    
+    Args:
+      actor: dict del current_user (deve avere id, nome, cognome, ruolo)
+      action: codice dell'azione (es: 'rimborso.approve', 'user.disable', 'user.delete', 'user.reset_password', 'user.change_role', 'rimborso.reject', 'rimborso.pay', 'rimborso.create')
+      target_type: tipo entità (rimborso, user, annuncio, documento, sede, motivo)
+      target_id: id dell'entità coinvolta
+      target_label: descrizione human-readable (es: 'Mario Rossi', 'Rimborso del 2026-04-30')
+      sede_id: sede di riferimento per filtri
+      old_value / new_value: valori prima/dopo per cambi di stato/ruolo
+      note: testo libero opzionale
+    """
+    entry = {
+        "actor_id": actor.get("id"),
+        "actor_nome": f"{actor.get('nome', '')} {actor.get('cognome', '')}".strip() or actor.get("email", "?"),
+        "actor_ruolo": actor.get("ruolo"),
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_label": target_label,
+        "sede_id": sede_id,
+        "old_value": old_value,
+        "new_value": new_value,
+        "note": note,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.audit_log.insert_one(entry)
+
+
+
 # ==================== AUTH ROUTES ====================
 # API per registrazione, login, logout e gestione sessioni
 
@@ -712,6 +756,15 @@ async def admin_reset_password(user_id: str, request: Request):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     
+    await _log_audit(
+        actor=current_user,
+        action="user.reset_password",
+        target_type="user",
+        target_id=user_id,
+        target_label=f"{target_user.get('nome', '')} {target_user.get('cognome', '')} ({target_user.get('email', '')})".strip(),
+        sede_id=target_user.get("sede_id"),
+    )
+    
     return {
         "message": "Password reimpostata con successo",
         "temporary_password": temp_password,
@@ -720,7 +773,6 @@ async def admin_reset_password(user_id: str, request: Request):
 
 
 # ==================== DISATTIVA / CANCELLA UTENTE ====================
-
 class ToggleDisableRequest(BaseModel):
     disabled: bool
 
@@ -756,6 +808,17 @@ async def toggle_user_disabled(user_id: str, data: ToggleDisableRequest, request
     }
     
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
+    
+    await _log_audit(
+        actor=current_user,
+        action="user.disable" if data.disabled else "user.enable",
+        target_type="user",
+        target_id=user_id,
+        target_label=f"{target_user.get('nome', '')} {target_user.get('cognome', '')} ({target_user.get('email', '')})".strip(),
+        sede_id=target_user.get("sede_id"),
+        old_value="active" if not target_user.get("disabled") else "disabled",
+        new_value="disabled" if data.disabled else "active",
+    )
     
     return {
         "message": "Utente disattivato" if data.disabled else "Utente riattivato",
@@ -801,7 +864,64 @@ async def delete_user(user_id: str, request: Request):
     # Cancella utente
     await db.users.delete_one({"_id": ObjectId(user_id)})
     
+    await _log_audit(
+        actor=current_user,
+        action="user.delete",
+        target_type="user",
+        target_id=user_id,
+        target_label=f"{target_user.get('nome', '')} {target_user.get('cognome', '')} ({target_user.get('email', '')})".strip(),
+        sede_id=target_user.get("sede_id"),
+        old_value=target_user.get("ruolo"),
+        note="Cancellazione definitiva, dati anonimizzati nei record storici",
+    )
+    
     return {"message": "Utente cancellato definitivamente"}
+
+
+
+# ==================== AUDIT LOG ROUTES ====================
+
+@api_router.get("/audit-log")
+async def get_audit_log(
+    request: Request,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    action: Optional[str] = None,
+    limit: int = 100,
+):
+    """
+    Restituisce gli eventi audit.
+    - SuperAdmin/SuperUser: vede tutto
+    - Admin/Cassiere/Segretario: vede solo la propria sede
+    - Altri ruoli: forbidden
+    
+    Filtri opzionali: target_type, target_id, action
+    """
+    user = await get_current_user(request)
+    
+    if user["ruolo"] not in ["superadmin", "superuser", "admin", "cassiere", "segretario"]:
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    
+    query = {}
+    if user["ruolo"] not in ["superadmin", "superuser"]:
+        query["sede_id"] = user.get("sede_id")
+    
+    if target_type:
+        query["target_type"] = target_type
+    if target_id:
+        query["target_id"] = target_id
+    if action:
+        query["action"] = action
+    
+    limit = min(max(limit, 1), 500)
+    
+    entries = []
+    async for entry in db.audit_log.find(query).sort("created_at", -1).limit(limit):
+        entry["id"] = str(entry["_id"])
+        entry.pop("_id")
+        entries.append(entry)
+    
+    return entries
 
 
 
@@ -1225,6 +1345,16 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
                 "rimborso_id": rimborso_id,
             }
         )
+        await _log_audit(
+            actor=user,
+            action=f"rimborso.{rimborso_data.stato}",
+            target_type="rimborso",
+            target_id=rimborso_id,
+            target_label=f"Rimborso del {rimborso['data']} - €{rimborso.get('importo_totale', 0):.2f}",
+            sede_id=rimborso.get("sede_id"),
+            old_value=rimborso.get("stato"),
+            new_value=rimborso_data.stato,
+        )
     
     return {"message": "Rimborso aggiornato"}
 
@@ -1315,6 +1445,18 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
         })
     if notifiche_admin:
         await db.notifiche.insert_many(notifiche_admin)
+    
+    await _log_audit(
+        actor=user,
+        action="rimborso.pay_direct" if pagamento_diretto else "rimborso.pay",
+        target_type="rimborso",
+        target_id=rimborso_id,
+        target_label=f"Rimborso del {rimborso['data']} - €{rimborso.get('importo_totale', 0):.2f}",
+        sede_id=rimborso.get("sede_id"),
+        old_value=rimborso.get("stato"),
+        new_value="pagato",
+        note=f"Contabile caricata: {file.filename}",
+    )
     
     return {"message": "Contabile caricata e rimborso pagato"}
 
@@ -1767,7 +1909,23 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
     if ruolo not in valid_roles:
         raise HTTPException(status_code=400, detail="Ruolo non valido")
     
+    target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"ruolo": ruolo}})
+    
+    if target_user.get("ruolo") != ruolo:
+        await _log_audit(
+            actor=current_user,
+            action="user.change_role",
+            target_type="user",
+            target_id=user_id,
+            target_label=f"{target_user.get('nome', '')} {target_user.get('cognome', '')} ({target_user.get('email', '')})".strip(),
+            sede_id=target_user.get("sede_id"),
+            old_value=target_user.get("ruolo"),
+            new_value=ruolo,
+        )
     
     return {"message": "Ruolo aggiornato"}
 

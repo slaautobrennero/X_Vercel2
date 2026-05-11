@@ -16,7 +16,8 @@ import {
   ChevronDown,
   User,
   Settings,
-  BarChart3
+  BarChart3,
+  History
 } from 'lucide-react';
 
 export default function MainLayout() {
@@ -36,6 +37,7 @@ export default function MainLayout() {
   const canManageSedi = ['superadmin'].includes(user?.ruolo);
   const canManageMotivi = ['superadmin'].includes(user?.ruolo);
   const canViewReports = ['admin', 'cassiere', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canViewAuditLog = ['admin', 'cassiere', 'segretario', 'superadmin', 'superuser'].includes(user?.ruolo);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },
@@ -45,6 +47,7 @@ export default function MainLayout() {
     { path: '/report', label: 'Report', icon: BarChart3, show: canViewReports },
     { path: '/notifiche', label: 'Notifiche', icon: Bell, show: true },
     { path: '/utenti', label: 'Utenti', icon: Users, show: canManageUsers },
+    { path: '/audit-log', label: 'Audit Log', icon: History, show: canViewAuditLog },
     { path: '/sedi', label: 'Sedi', icon: Building2, show: canManageSedi },
     { path: '/motivi-rimborso', label: 'Motivi Rimborso', icon: Settings, show: canManageMotivi },
   ];

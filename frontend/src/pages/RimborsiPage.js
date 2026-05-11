@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatCurrency, STATI_RIMBORSO } from '../lib/utils';
 import axios from 'axios';
-import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText } from 'lucide-react';
+import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText, History } from 'lucide-react';
+import { RimborsoHistoryModal } from './AuditLogPage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -574,6 +575,7 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
   const [spesaFile, setSpesaFile] = useState(null);
   const [spesaTipo, setSpesaTipo] = useState('pasto');
   const [spesaDescrizione, setSpesaDescrizione] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
 
   const handleUploadSpesa = async () => {
     if (!spesaFile) return;
@@ -604,9 +606,19 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
       <div className="bg-white rounded-lg w-full max-w-lg my-8">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Dettaglio Rimborso</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowHistory(true)}
+              className="p-2 text-gray-500 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"
+              title="Storico variazioni"
+              data-testid="open-history-btn"
+            >
+              <History size={18} />
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X size={20} />
+            </button>
+          </div>
         </div>
         <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Alert KM modificati */}
@@ -831,6 +843,9 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
           )}
         </div>
       </div>
+      {showHistory && (
+        <RimborsoHistoryModal rimborsoId={rimborso.id} onClose={() => setShowHistory(false)} />
+      )}
     </div>
   );
 }
