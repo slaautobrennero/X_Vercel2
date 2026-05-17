@@ -1,100 +1,101 @@
 #!/bin/bash
 #############################################
-# Script Restore MongoDB da Backup
-# Portale SLA
+# Script Restore MongoDB CIFRATO
+# Portale SLA - Sindacato Lavoratori Autostradali
 #############################################
 
-# Colori
+DB_NAME="sla_sindacato"
+CONTAINER_NAME="sla-mongodb"
+PASSWORD_FILE="/opt/portale-sla/.backup_password"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-BACKUP_DIR="/opt/portale-sla/backups"
-CONTAINER_NAME="sla-mongodb"
-DB_NAME="sla_sindacato"
-
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Restore MongoDB - Portale SLA${NC}"
+echo -e "${GREEN}  Restore MongoDB CIFRATO - Portale SLA${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Lista backup disponibili
-echo -e "${YELLOW}Backup disponibili:${NC}"
-echo ""
-ls -lh "$BACKUP_DIR"/*.tar.gz 2>/dev/null | awk '{print $9}' | nl
-echo ""
-
-# Chiedi quale backup ripristinare
-read -p "Inserisci il numero del backup da ripristinare (o 'q' per uscire): " CHOICE
-
-if [ "$CHOICE" = "q" ]; then
-    echo "Operazione annullata."
-    exit 0
-fi
-
-# Ottieni il file selezionato
-BACKUP_FILE=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | sed -n "${CHOICE}p")
-
-if [ -z "$BACKUP_FILE" ]; then
-    echo -e "${RED}✗ Backup non valido!${NC}"
+# Verifica argomenti
+if [ -z "$1" ]; then
+    echo -e "${RED}Uso:${NC} $0 <percorso_backup.tar.gz.enc>"
+    echo ""
+    echo "Esempio: $0 /opt/portale-sla/backups/db/db_20260512_030000.tar.gz.enc"
+    echo ""
+    echo "Backup locali disponibili:"
+    ls -lh /opt/portale-sla/backups/db/*.tar.gz.enc 2>/dev/null || echo "  (nessuno)"
     exit 1
 fi
 
-echo ""
-echo -e "${YELLOW}Backup selezionato:${NC} $(basename "$BACKUP_FILE")"
-echo ""
-echo -e "${RED}⚠ ATTENZIONE: Questo sovrascriverà il database corrente!${NC}"
-read -p "Sei sicuro di voler continuare? (sì/no): " CONFIRM
+BACKUP_FILE="$1"
 
-if [ "$CONFIRM" != "sì" ] && [ "$CONFIRM" != "si" ]; then
-    echo "Operazione annullata."
+if [ ! -f "$BACKUP_FILE" ]; then
+    echo -e "${RED}✗ File non trovato: $BACKUP_FILE${NC}"
+    exit 1
+fi
+
+if [ ! -f "$PASSWORD_FILE" ]; then
+    echo -e "${RED}✗ File password non trovato: $PASSWORD_FILE${NC}"
+    exit 1
+fi
+
+# Conferma destruttiva
+echo -e "${YELLOW}⚠️  ATTENZIONE: Questo sovrascriverà il database '$DB_NAME' attuale!${NC}"
+read -p "Continuare? (scrivi 'SI' per confermare): " confirm
+if [ "$confirm" != "SI" ]; then
+    echo "Annullato."
     exit 0
 fi
 
-# Decomprimi backup
-echo -e "${YELLOW}[1/4]${NC} Decompressione backup..."
-TEMP_DIR=$(mktemp -d)
-tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
-echo -e "${GREEN}✓ Decompressione completata${NC}"
+TMP_DIR=$(mktemp -d)
+DECRYPTED="$TMP_DIR/backup.tar.gz"
 
-# Ferma backend per evitare scritture durante restore
-echo -e "${YELLOW}[2/4]${NC} Arresto backend..."
-docker compose -f /opt/portale-sla/docker/docker-compose.yml stop backend
-echo -e "${GREEN}✓ Backend arrestato${NC}"
+# Decifratura
+echo -e "${YELLOW}[1/4]${NC} Decifratura backup..."
+openssl enc -d -aes-256-cbc -pbkdf2 -salt -iter 100000 \
+    -in "$BACKUP_FILE" \
+    -out "$DECRYPTED" \
+    -pass file:"$PASSWORD_FILE"
 
-# Copia backup nel container
-echo -e "${YELLOW}[3/4]${NC} Copia backup nel container..."
-BACKUP_NAME=$(basename "$BACKUP_FILE" .tar.gz)
-docker cp "$TEMP_DIR/$BACKUP_NAME" "$CONTAINER_NAME:/restore"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ Decifratura fallita! Password errata?${NC}"
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+echo -e "${GREEN}✓ Decifrato${NC}"
 
-# Restore database
+# Estrazione
+echo -e "${YELLOW}[2/4]${NC} Estrazione archivio..."
+tar -xzf "$DECRYPTED" -C "$TMP_DIR"
+DUMP_DIR=$(find "$TMP_DIR" -maxdepth 2 -type d -name "db_*" | head -1)
+if [ -z "$DUMP_DIR" ]; then
+    DUMP_DIR=$(find "$TMP_DIR" -maxdepth 2 -type d ! -name "$(basename "$TMP_DIR")" | head -1)
+fi
+echo -e "${GREEN}✓ Estratto in: $DUMP_DIR${NC}"
+
+# Copia nel container
+echo -e "${YELLOW}[3/4]${NC} Copia nel container MongoDB..."
+docker cp "$DUMP_DIR" "$CONTAINER_NAME:/restore_$DB_NAME"
+
+# Restore
 echo -e "${YELLOW}[4/4]${NC} Restore database..."
-docker exec "$CONTAINER_NAME" mongorestore \
-    --db="$DB_NAME" \
-    --drop \
-    "/restore" \
-    --quiet
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Restore completato!${NC}"
-else
-    echo -e "${RED}✗ Errore durante il restore${NC}"
-    exit 1
-fi
+docker exec "$CONTAINER_NAME" mongorestore --drop --db="$DB_NAME" "/restore_$DB_NAME" --quiet
+RESTORE_STATUS=$?
 
 # Pulizia
-docker exec "$CONTAINER_NAME" rm -rf /restore
-rm -rf "$TEMP_DIR"
+docker exec "$CONTAINER_NAME" rm -rf "/restore_$DB_NAME"
+rm -rf "$TMP_DIR"
 
-# Riavvia backend
-echo -e "${YELLOW}Riavvio backend...${NC}"
-docker compose -f /opt/portale-sla/docker/docker-compose.yml start backend
-sleep 3
-echo -e "${GREEN}✓ Backend riavviato${NC}"
+if [ $RESTORE_STATUS -eq 0 ]; then
+    echo -e "${GREEN}✓ Restore completato!${NC}"
+else
+    echo -e "${RED}✗ Restore fallito${NC}"
+    exit 1
+fi
 
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  RESTORE COMPLETATO!${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}DATABASE RIPRISTINATO CON SUCCESSO${NC}"
+echo -e "Riavvia il backend per riconnetterti: ${YELLOW}docker compose restart backend${NC}"
 echo ""

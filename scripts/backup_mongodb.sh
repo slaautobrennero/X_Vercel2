@@ -1,108 +1,113 @@
 #!/bin/bash
 #############################################
-# Script Backup Automatico MongoDB → Google Drive
+# Script Backup MongoDB CIFRATO → Google Drive
 # Portale SLA - Sindacato Lavoratori Autostradali
 #############################################
 
 # Configurazione
-BACKUP_DIR="/opt/portale-sla/backups"
+BACKUP_DIR="/opt/portale-sla/backups/db"
 DB_NAME="sla_sindacato"
 CONTAINER_NAME="sla-mongodb"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="backup_${TIMESTAMP}"
-RETENTION_DAYS=7  # Mantieni backup per 7 giorni
+BACKUP_NAME="db_${TIMESTAMP}"
+RETENTION_DAYS=14
+PASSWORD_FILE="/opt/portale-sla/.backup_password"
+GDRIVE_DEST="gdrive:Portale-SLA-Backups/db/"
 
-# Colori per output
+# Colori
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Backup MongoDB - Portale SLA${NC}"
+echo -e "${GREEN}  Backup MongoDB CIFRATO - Portale SLA${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Crea directory backup se non esiste
+# Verifica password
+if [ ! -f "$PASSWORD_FILE" ]; then
+    echo -e "${RED}✗ ERRORE: file password non trovato: $PASSWORD_FILE${NC}"
+    echo "Crealo con:  echo 'TUA_PASSWORD' > $PASSWORD_FILE && chmod 600 $PASSWORD_FILE"
+    exit 1
+fi
+
+PERMS=$(stat -c "%a" "$PASSWORD_FILE")
+if [ "$PERMS" != "600" ]; then
+    echo -e "${YELLOW}⚠ Permessi password file non sicuri ($PERMS), correggo a 600${NC}"
+    chmod 600 "$PASSWORD_FILE"
+fi
+
 mkdir -p "$BACKUP_DIR"
 
-# Step 1: Verifica container MongoDB attivo
-echo -e "${YELLOW}[1/5]${NC} Verifica container MongoDB..."
+# Verifica container
+echo -e "${YELLOW}[1/6]${NC} Verifica container MongoDB..."
 if ! docker ps | grep -q "$CONTAINER_NAME"; then
     echo -e "${RED}✗ ERRORE: Container MongoDB non attivo!${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ MongoDB attivo${NC}"
 
-# Step 2: Dump database
-echo -e "${YELLOW}[2/5]${NC} Creazione dump database..."
-docker exec "$CONTAINER_NAME" mongodump \
-    --db="$DB_NAME" \
-    --out="/dump" \
-    --quiet
-
+# Dump
+echo -e "${YELLOW}[2/6]${NC} Creazione dump database..."
+docker exec "$CONTAINER_NAME" mongodump --db="$DB_NAME" --out="/dump" --quiet
 if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ ERRORE: Dump database fallito!${NC}"
+    echo -e "${RED}✗ Dump fallito${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ Dump completato${NC}"
 
-# Step 3: Copia dump dal container
-echo -e "${YELLOW}[3/5]${NC} Copia backup dal container..."
+# Copia + compressione
+echo -e "${YELLOW}[3/6]${NC} Compressione..."
 docker cp "$CONTAINER_NAME:/dump/$DB_NAME" "$BACKUP_DIR/$BACKUP_NAME"
+tar -czf "$BACKUP_DIR/$BACKUP_NAME.tar.gz" -C "$BACKUP_DIR" "$BACKUP_NAME"
+rm -rf "$BACKUP_DIR/$BACKUP_NAME"
+echo -e "${GREEN}✓ Compresso: $BACKUP_NAME.tar.gz${NC}"
+
+# Cifratura AES-256-CBC con password
+echo -e "${YELLOW}[4/6]${NC} Cifratura AES-256..."
+openssl enc -aes-256-cbc -pbkdf2 -salt -iter 100000 \
+    -in "$BACKUP_DIR/$BACKUP_NAME.tar.gz" \
+    -out "$BACKUP_DIR/$BACKUP_NAME.tar.gz.enc" \
+    -pass file:"$PASSWORD_FILE"
 
 if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ ERRORE: Copia backup fallita!${NC}"
+    echo -e "${RED}✗ Cifratura fallita${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Backup copiato in: $BACKUP_DIR/$BACKUP_NAME${NC}"
 
-# Step 4: Comprimi backup
-echo -e "${YELLOW}[4/5]${NC} Compressione backup..."
-tar -czf "$BACKUP_DIR/$BACKUP_NAME.tar.gz" -C "$BACKUP_DIR" "$BACKUP_NAME"
+# Rimuovi versione non cifrata
+rm -f "$BACKUP_DIR/$BACKUP_NAME.tar.gz"
+echo -e "${GREEN}✓ Cifrato: $BACKUP_NAME.tar.gz.enc${NC}"
 
-if [ $? -eq 0 ]; then
-    rm -rf "$BACKUP_DIR/$BACKUP_NAME"  # Rimuovi versione non compressa
-    echo -e "${GREEN}✓ Backup compresso: $BACKUP_NAME.tar.gz${NC}"
-else
-    echo -e "${RED}✗ Compressione fallita (backup non compresso mantenuto)${NC}"
-fi
-
-# Step 5: Pulizia dump nel container
-echo -e "${YELLOW}[5/5]${NC} Pulizia container..."
+# Pulizia container
+echo -e "${YELLOW}[5/6]${NC} Pulizia container..."
 docker exec "$CONTAINER_NAME" rm -rf /dump
-echo -e "${GREEN}✓ Pulizia completata${NC}"
+echo -e "${GREEN}✓ Pulizia OK${NC}"
 
-# Step 6: Rimuovi backup vecchi (più di RETENTION_DAYS giorni)
-echo -e "${YELLOW}[Extra]${NC} Rimozione backup vecchi (>${RETENTION_DAYS} giorni)..."
-find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f -mtime +${RETENTION_DAYS} -delete
-OLD_COUNT=$(find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f | wc -l)
-echo -e "${GREEN}✓ Backup totali conservati: $OLD_COUNT${NC}"
+# Retention
+find "$BACKUP_DIR" -name "db_*.tar.gz.enc" -type f -mtime +${RETENTION_DAYS} -delete
+LOCAL_COUNT=$(find "$BACKUP_DIR" -name "db_*.tar.gz.enc" -type f | wc -l)
 
-# Step 7: Sincronizzazione Google Drive (se rclone configurato)
-if command -v rclone &> /dev/null; then
-    if rclone listremotes | grep -q "gdrive:"; then
-        echo -e "${YELLOW}[Sync]${NC} Sincronizzazione con Google Drive..."
-        rclone copy "$BACKUP_DIR/$BACKUP_NAME.tar.gz" "gdrive:Portale-SLA-Backups/" --progress
-        
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Backup caricato su Google Drive!${NC}"
-        else
-            echo -e "${RED}✗ Errore upload Google Drive${NC}"
-        fi
+# Upload Google Drive
+echo -e "${YELLOW}[6/6]${NC} Upload Google Drive..."
+if command -v rclone &> /dev/null && rclone listremotes | grep -q "gdrive:"; then
+    rclone copy "$BACKUP_DIR/$BACKUP_NAME.tar.gz.enc" "$GDRIVE_DEST" --quiet
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Caricato su Google Drive${NC}"
     else
-        echo -e "${YELLOW}⚠ Google Drive non configurato (esegui setup rclone)${NC}"
+        echo -e "${RED}✗ Errore upload Google Drive${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠ rclone non installato (backup solo locale)${NC}"
+    echo -e "${YELLOW}⚠ rclone/gdrive non configurato (solo locale)${NC}"
 fi
 
-# Riepilogo finale
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  BACKUP COMPLETATO!${NC}"
+echo -e "${GREEN}  BACKUP DB COMPLETATO!${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo -e "Backup: ${GREEN}$BACKUP_NAME.tar.gz${NC}"
-echo -e "Dimensione: $(du -h "$BACKUP_DIR/$BACKUP_NAME.tar.gz" | cut -f1)"
-echo -e "Percorso: $BACKUP_DIR"
+echo -e "File:       ${GREEN}$BACKUP_NAME.tar.gz.enc${NC}"
+echo -e "Dimensione: $(du -h "$BACKUP_DIR/$BACKUP_NAME.tar.gz.enc" | cut -f1)"
+echo -e "Locali:     $LOCAL_COUNT backup conservati"
+echo -e "Cifratura:  AES-256-CBC con PBKDF2 (100k iter)"
 echo ""

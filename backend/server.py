@@ -92,8 +92,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Directory Upload - Per documenti, modulistica e ricevute
-UPLOAD_DIR = ROOT_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/uploads"))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB limite
 
 # ==================== PYDANTIC MODELS ====================
