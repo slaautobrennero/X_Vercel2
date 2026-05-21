@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../lib/utils';
 import axios from 'axios';
-import { FileSpreadsheet, Download, BarChart3 } from 'lucide-react';
+import { FileSpreadsheet, Download, BarChart3, FileText } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -36,17 +36,18 @@ export default function ReportPage() {
     }
   };
 
-  const handleExport = async () => {
-    setExporting(true);
+  const handleExport = async (formato = 'csv') => {
+    setExporting(formato);
     try {
-      const response = await axios.get(`${API}/reports/rimborsi-export?anno=${anno}&formato=csv`, {
+      const response = await axios.get(`${API}/reports/rimborsi-export?anno=${anno}&formato=${formato}`, {
         responseType: 'blob'
       });
       
+      const ext = formato === 'xlsx' ? 'xlsx' : (formato === 'pdf' ? 'pdf' : 'csv');
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `rimborsi_${anno}.csv`);
+      link.setAttribute('download', `rimborsi_${anno}.${ext}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -95,13 +96,34 @@ export default function ReportPage() {
             ))}
           </select>
           <button
-            onClick={handleExport}
-            disabled={exporting || report.length === 0}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-md px-4 py-2 transition-colors disabled:opacity-50"
+            onClick={() => handleExport('csv')}
+            disabled={!!exporting || report.length === 0}
+            className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md px-3 py-2 transition-colors disabled:opacity-50"
             data-testid="export-csv-btn"
+            title="Esporta CSV"
           >
             <Download size={18} />
-            {exporting ? 'Esportazione...' : 'Esporta CSV'}
+            <span className="hidden sm:inline">{exporting === 'csv' ? 'Export...' : 'CSV'}</span>
+          </button>
+          <button
+            onClick={() => handleExport('xlsx')}
+            disabled={!!exporting || report.length === 0}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-md px-3 py-2 transition-colors disabled:opacity-50"
+            data-testid="export-xlsx-btn"
+            title="Esporta Excel"
+          >
+            <FileSpreadsheet size={18} />
+            <span className="hidden sm:inline">{exporting === 'xlsx' ? 'Export...' : 'Excel'}</span>
+          </button>
+          <button
+            onClick={() => handleExport('pdf')}
+            disabled={!!exporting || report.length === 0}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md px-3 py-2 transition-colors disabled:opacity-50"
+            data-testid="export-pdf-btn"
+            title="Esporta PDF"
+          >
+            <FileText size={18} />
+            <span className="hidden sm:inline">{exporting === 'pdf' ? 'Export...' : 'PDF'}</span>
           </button>
         </div>
       </div>

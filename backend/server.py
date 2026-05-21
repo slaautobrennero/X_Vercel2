@@ -1257,6 +1257,125 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     
     return ricevuta
 
+@api_router.post("/rimborsi/{rimborso_id}/ricevute-multi")
+async def upload_ricevute_multi(rimborso_id: str, request: Request, files: List[UploadFile] = File(...)):
+    """Upload multiplo di ricevute generiche al rimborso"""
+    user = await get_current_user(request)
+    
+    rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
+    if not rimborso:
+        raise HTTPException(status_code=404, detail="Rimborso non trovato")
+    
+    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    
+    uploaded = []
+    for f in files:
+        if f.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
+            continue  # Skip silently formati non supportati
+        
+        content = await f.read()
+        if len(content) > 5 * 1024 * 1024:
+            continue  # Skip files troppo grandi
+        
+        file_id = str(uuid.uuid4())
+        ext = f.filename.split(".")[-1] if "." in f.filename else "pdf"
+        filename = f"{file_id}.{ext}"
+        filepath = UPLOAD_DIR / filename
+        
+        async with aiofiles.open(filepath, "wb") as fout:
+            await fout.write(content)
+        
+        ricevuta = {
+            "id": file_id,
+            "filename": f.filename,
+            "path": filename,
+            "content_type": f.content_type,
+            "uploaded_at": datetime.now(timezone.utc).isoformat()
+        }
+        uploaded.append(ricevuta)
+    
+    if uploaded:
+        await db.rimborsi.update_one(
+            {"_id": ObjectId(rimborso_id)},
+            {"$push": {"ricevute": {"$each": uploaded}}}
+        )
+    
+    return {"uploaded": uploaded, "count": len(uploaded), "skipped": len(files) - len(uploaded)}
+
+
+@api_router.get("/rimborsi/{rimborso_id}/ricevute/{file_id}")
+async def download_ricevuta(rimborso_id: str, file_id: str, request: Request):
+    """Download di una ricevuta specifica (anche per anteprima inline)"""
+    user = await get_current_user(request)
+    
+    rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
+    if not rimborso:
+        raise HTTPException(status_code=404, detail="Rimborso non trovato")
+    
+    # Permessi: proprietario o admin/cassiere/segretario
+    if rimborso["user_id"] != user["id"]:
+        if user["ruolo"] not in ["admin", "cassiere", "segretario", "superadmin", "superuser"]:
+            raise HTTPException(status_code=403, detail="Non autorizzato")
+        if user["ruolo"] not in ["superadmin", "superuser"] and rimborso.get("sede_id") != user.get("sede_id"):
+            raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    
+    # Cerca in ricevute e ricevute_spese
+    ricevuta = next(
+        (r for r in (rimborso.get("ricevute") or []) + (rimborso.get("ricevute_spese") or []) if r.get("id") == file_id),
+        None
+    )
+    if not ricevuta:
+        raise HTTPException(status_code=404, detail="Ricevuta non trovata")
+    
+    filepath = UPLOAD_DIR / ricevuta["path"]
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File non trovato sul server")
+    
+    return FileResponse(filepath, filename=ricevuta.get("filename", "ricevuta"))
+
+
+@api_router.delete("/rimborsi/{rimborso_id}/ricevute/{file_id}")
+async def delete_ricevuta(rimborso_id: str, file_id: str, request: Request):
+    """Elimina una ricevuta. Possibile solo se rimborso ancora 'in_attesa'."""
+    user = await get_current_user(request)
+    
+    rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
+    if not rimborso:
+        raise HTTPException(status_code=404, detail="Rimborso non trovato")
+    
+    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    
+    if rimborso.get("stato") not in ["in_attesa", None]:
+        raise HTTPException(status_code=400, detail="Impossibile rimuovere ricevute da rimborsi già approvati/pagati")
+    
+    # Cerca in entrambe le liste
+    ricevuta = next(
+        (r for r in (rimborso.get("ricevute") or []) + (rimborso.get("ricevute_spese") or []) if r.get("id") == file_id),
+        None
+    )
+    if not ricevuta:
+        raise HTTPException(status_code=404, detail="Ricevuta non trovata")
+    
+    # Rimuovi dal disco
+    filepath = UPLOAD_DIR / ricevuta["path"]
+    if filepath.exists():
+        filepath.unlink()
+    
+    # Rimuovi da entrambe le liste
+    await db.rimborsi.update_one(
+        {"_id": ObjectId(rimborso_id)},
+        {"$pull": {
+            "ricevute": {"id": file_id},
+            "ricevute_spese": {"id": file_id}
+        }}
+    )
+    
+    return {"message": "Ricevuta eliminata"}
+
+
+
 @api_router.post("/rimborsi/{rimborso_id}/ricevute-spese")
 async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: UploadFile = File(...), tipo: str = Form(...), descrizione: str = Form(None)):
     """Upload ricevuta spesa (pasto, altro)"""
@@ -2010,6 +2129,139 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
             iter([output.getvalue()]),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename=rimborsi_{anno}.csv"}
+        )
+    elif formato == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Rimborsi {anno}"
+        
+        headers = list(rimborsi[0].keys()) if rimborsi else [
+            "Data", "Utente", "Email", "IBAN", "Motivo", "Partenza", "Arrivo",
+            "KM Totali", "Importo KM", "Importo Pasti", "Autostrada", "Totale", "Stato", "Note"
+        ]
+        
+        # Header styling
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1E4D8C", end_color="1E4D8C", fill_type="solid")
+        thin = Side(border_style="thin", color="CCCCCC")
+        border = Border(top=thin, left=thin, right=thin, bottom=thin)
+        
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+        
+        for row_idx, r in enumerate(rimborsi, start=2):
+            for col_idx, key in enumerate(headers, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=r.get(key, ""))
+                cell.border = border
+                cell.alignment = Alignment(vertical="center")
+        
+        # Auto-width
+        for col in ws.columns:
+            max_len = max((len(str(c.value)) for c in col if c.value is not None), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+        
+        # Header altezza
+        ws.row_dimensions[1].height = 25
+        
+        # Riga totale
+        if rimborsi:
+            total = sum(float(r["Totale"]) for r in rimborsi)
+            total_row = len(rimborsi) + 2
+            ws.cell(row=total_row, column=1, value="TOTALE").font = Font(bold=True)
+            cell = ws.cell(row=total_row, column=headers.index("Totale") + 1, value=f"{total:.2f}")
+            cell.font = Font(bold=True, color="1E4D8C")
+        
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+        return StreamingResponse(
+            iter([out.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=rimborsi_{anno}.xlsx"}
+        )
+    elif formato == "pdf":
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.units import mm
+        
+        out = io.BytesIO()
+        doc = SimpleDocTemplate(
+            out, pagesize=landscape(A4),
+            rightMargin=10*mm, leftMargin=10*mm, topMargin=15*mm, bottomMargin=15*mm
+        )
+        
+        elements = []
+        styles = getSampleStyleSheet()
+        title_style = styles["Title"]
+        title_style.textColor = colors.HexColor("#1E4D8C")
+        
+        # Titolo
+        sede_nome = ""
+        if user.get("sede_id"):
+            sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
+            if sede:
+                sede_nome = f" - {sede['nome']}"
+        
+        elements.append(Paragraph(f"Rendiconto Rimborsi {anno}{sede_nome}", title_style))
+        elements.append(Paragraph(
+            f"<font size=9 color='#666'>Generato da {user.get('nome', '')} {user.get('cognome', '')} il {datetime.now().strftime('%d/%m/%Y %H:%M')}</font>",
+            styles["Normal"]
+        ))
+        elements.append(Spacer(1, 8*mm))
+        
+        # Tabella (riduco colonne per A4 landscape)
+        pdf_headers = ["Data", "Utente", "Motivo", "KM", "Importo €", "Stato"]
+        data = [pdf_headers]
+        total = 0.0
+        for r in rimborsi:
+            data.append([
+                r["Data"],
+                r["Utente"],
+                r["Motivo"],
+                str(r["KM Totali"]),
+                r["Totale"],
+                r["Stato"].upper()
+            ])
+            try:
+                total += float(r["Totale"])
+            except (ValueError, TypeError):
+                pass
+        
+        # Riga totale
+        data.append(["", "", "", "TOTALE", f"{total:.2f}", ""])
+        
+        table = Table(data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E4D8C")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor("#CCCCCC")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor("#F5F7FA")]),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#FFF7E0")),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(table)
+        
+        doc.build(elements)
+        out.seek(0)
+        return StreamingResponse(
+            iter([out.getvalue()]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=rimborsi_{anno}.pdf"}
         )
     else:
         return rimborsi

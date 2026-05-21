@@ -695,6 +695,9 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
             </div>
           )}
 
+          {/* Ricevute (multi-upload con anteprima) */}
+          <ReceiptsSection rimborso={rimborso} onUpdated={onRefresh} />
+
           {/* Ricevute spese */}
           {rimborso.ricevute_spese && rimborso.ricevute_spese.length > 0 && (
             <div>
@@ -845,6 +848,173 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
       </div>
       {showHistory && (
         <RimborsoHistoryModal rimborsoId={rimborso.id} onClose={() => setShowHistory(false)} />
+      )}
+    </div>
+  );
+}
+
+
+// Componente sezione ricevute multi-upload + anteprima
+function ReceiptsSection({ rimborso, onUpdated }) {
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(null); // {id, filename, isImage}
+  const [ricevute, setRicevute] = useState(rimborso.ricevute || []);
+  
+  const canEdit = rimborso.stato === 'in_attesa' || !rimborso.stato;
+  
+  React.useEffect(() => {
+    setRicevute(rimborso.ricevute || []);
+  }, [rimborso.ricevute]);
+
+  const handleFileChange = (e) => {
+    setFiles(Array.from(e.target.files || []));
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      files.forEach(f => formData.append('files', f));
+      const res = await axios.post(`${API}/rimborsi/${rimborso.id}/ricevute-multi`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      // Aggiorna stato locale e parent
+      setRicevute(prev => [...prev, ...(res.data.uploaded || [])]);
+      setFiles([]);
+      if (res.data.skipped > 0) {
+        alert(`${res.data.count} ricevute caricate. ${res.data.skipped} scartate (formato/dimensione non supportati).`);
+      }
+      onUpdated?.();
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Errore upload ricevute');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (fileId) => {
+    if (!window.confirm('Rimuovere questa ricevuta?')) return;
+    try {
+      await axios.delete(`${API}/rimborsi/${rimborso.id}/ricevute/${fileId}`);
+      setRicevute(prev => prev.filter(r => r.id !== fileId));
+      onUpdated?.();
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Errore eliminazione');
+    }
+  };
+
+  const openPreview = (r) => {
+    const isImage = (r.content_type || '').startsWith('image/') ||
+                    /\.(jpg|jpeg|png)$/i.test(r.filename || '');
+    setPreview({ ...r, isImage });
+  };
+
+  const buildPreviewUrl = (id) => `${API}/rimborsi/${rimborso.id}/ricevute/${id}`;
+
+  return (
+    <div className="border-t border-gray-200 pt-4">
+      <p className="text-sm font-medium text-gray-700 mb-2">
+        Ricevute ({ricevute.length})
+      </p>
+
+      {ricevute.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+          {ricevute.map(r => {
+            const isImg = (r.content_type || '').startsWith('image/') || /\.(jpg|jpeg|png)$/i.test(r.filename || '');
+            return (
+              <div key={r.id} className="relative group border border-gray-200 rounded-md overflow-hidden bg-gray-50" data-testid={`ricevuta-${r.id}`}>
+                <button
+                  type="button"
+                  onClick={() => openPreview(r)}
+                  className="w-full h-24 flex items-center justify-center"
+                >
+                  {isImg ? (
+                    <img
+                      src={buildPreviewUrl(r.id)}
+                      alt={r.filename}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center text-gray-500">
+                      <FileText size={28} />
+                      <span className="text-xs mt-1">PDF</span>
+                    </div>
+                  )}
+                </button>
+                <p className="text-xs text-gray-600 px-2 py-1 truncate" title={r.filename}>{r.filename}</p>
+                {canEdit && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
+                    className="absolute top-1 right-1 p-1 bg-white/90 hover:bg-red-500 hover:text-white text-gray-600 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Rimuovi"
+                    data-testid={`delete-ricevuta-${r.id}`}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {canEdit && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={handleFileChange}
+            className="flex-1 text-sm"
+            data-testid="ricevute-multi-input"
+          />
+          <button
+            onClick={handleUpload}
+            disabled={files.length === 0 || uploading}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-[#1E4D8C] hover:bg-[#163A6A] text-white rounded-md text-sm transition-colors disabled:opacity-50"
+            data-testid="upload-ricevute-multi-btn"
+          >
+            <Upload size={16} />
+            {uploading ? 'Carico...' : `Carica ${files.length || ''}`}
+          </button>
+        </div>
+      )}
+      {canEdit && (
+        <p className="text-xs text-gray-500 mt-1">Puoi selezionare più file insieme (PDF/JPG/PNG, max 5MB ciascuno)</p>
+      )}
+
+      {/* Modal anteprima */}
+      {preview && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setPreview(null)}>
+          <div className="relative bg-white rounded-lg overflow-hidden max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <p className="text-sm font-medium text-gray-900 truncate">{preview.filename}</p>
+              <div className="flex items-center gap-1">
+                <a
+                  href={buildPreviewUrl(preview.id)}
+                  download={preview.filename}
+                  className="p-2 text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md"
+                  title="Scarica"
+                >
+                  <FileText size={18} />
+                </a>
+                <button onClick={() => setPreview(null)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-md">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="bg-gray-100 flex items-center justify-center" style={{ height: '70vh' }}>
+              {preview.isImage ? (
+                <img src={buildPreviewUrl(preview.id)} alt={preview.filename} className="max-w-full max-h-full object-contain" />
+              ) : (
+                <iframe src={buildPreviewUrl(preview.id)} title={preview.filename} className="w-full h-full" />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
