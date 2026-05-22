@@ -32,6 +32,7 @@ export default function RimborsiPage() {
     note: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  const [newReceipts, setNewReceipts] = useState([]);
   const [calcolandoKm, setCalcolandoKm] = useState(false);
   const [selectedMotivo, setSelectedMotivo] = useState(null);
 
@@ -108,7 +109,23 @@ export default function RimborsiPage() {
     
     setSubmitting(true);
     try {
-      await axios.post(`${API}/rimborsi`, formData);
+      const res = await axios.post(`${API}/rimborsi`, formData);
+      const newRimborsoId = res.data?.id;
+      
+      // Upload ricevute (se presenti) sul rimborso appena creato
+      if (newRimborsoId && newReceipts.length > 0) {
+        const receiptForm = new FormData();
+        newReceipts.forEach(f => receiptForm.append('files', f));
+        try {
+          await axios.post(`${API}/rimborsi/${newRimborsoId}/ricevute-multi`, receiptForm, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch (e) {
+          console.error('Upload ricevute fallito:', e);
+          alert('Rimborso creato ma upload ricevute fallito. Puoi riprovare dal dettaglio.');
+        }
+      }
+      
       setShowModal(false);
       resetForm();
       fetchData();
@@ -138,6 +155,7 @@ export default function RimborsiPage() {
       note: ''
     });
     setSelectedMotivo(null);
+    setNewReceipts([]);
   };
 
   const handleUpdateStato = async (id, stato) => {
@@ -532,6 +550,29 @@ export default function RimborsiPage() {
                 </p>
               </div>
 
+              {/* Allegati ricevute */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ricevute / Allegati (opzionale)
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => setNewReceipts(Array.from(e.target.files || []))}
+                  className="w-full text-sm"
+                  data-testid="create-rimborso-receipts-input"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Puoi selezionare più file insieme (PDF/JPG/PNG, max 5MB ciascuno)
+                </p>
+                {newReceipts.length > 0 && (
+                  <p className="text-xs text-[#1E4D8C] mt-1">
+                    {newReceipts.length} file selezionati
+                  </p>
+                )}
+              </div>
+
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
@@ -571,35 +612,7 @@ export default function RimborsiPage() {
 
 function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUploadContabile, onRefresh }) {
   const [contabileFile, setContabileFile] = useState(null);
-  const [uploadingSpesa, setUploadingSpesa] = useState(false);
-  const [spesaFile, setSpesaFile] = useState(null);
-  const [spesaTipo, setSpesaTipo] = useState('pasto');
-  const [spesaDescrizione, setSpesaDescrizione] = useState('');
   const [showHistory, setShowHistory] = useState(false);
-
-  const handleUploadSpesa = async () => {
-    if (!spesaFile) return;
-    setUploadingSpesa(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', spesaFile);
-      formData.append('tipo', spesaTipo);
-      formData.append('descrizione', spesaDescrizione);
-      
-      await axios.post(`${API}/rimborsi/${rimborso.id}/ricevute-spese`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
-      setSpesaFile(null);
-      setSpesaDescrizione('');
-      onRefresh();
-    } catch (error) {
-      console.error('Error uploading spesa:', error);
-      alert(error.response?.data?.detail || 'Errore durante il caricamento');
-    } finally {
-      setUploadingSpesa(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -697,61 +710,6 @@ function RimborsoDetailModal({ rimborso, isAdmin, onClose, onUpdateStato, onUplo
 
           {/* Ricevute (multi-upload con anteprima) */}
           <ReceiptsSection rimborso={rimborso} onUpdated={onRefresh} />
-
-          {/* Ricevute spese */}
-          {rimborso.ricevute_spese && rimborso.ricevute_spese.length > 0 && (
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Ricevute Spese</p>
-              <div className="space-y-2">
-                {rimborso.ricevute_spese.map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm bg-gray-50 px-3 py-2 rounded">
-                    <FileText size={14} className="text-gray-400" />
-                    <span className="capitalize">{r.tipo}</span>
-                    {r.descrizione && <span className="text-gray-500">- {r.descrizione}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Upload ricevuta spesa (solo se in_attesa e proprietario) */}
-          {rimborso.stato === 'in_attesa' && (
-            <div className="border-t border-gray-200 pt-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Carica Ricevuta Spesa</p>
-              <div className="space-y-2">
-                <select
-                  value={spesaTipo}
-                  onChange={(e) => setSpesaTipo(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="pasto">Pasto</option>
-                  <option value="altro">Altro</option>
-                </select>
-                <input
-                  type="text"
-                  value={spesaDescrizione}
-                  onChange={(e) => setSpesaDescrizione(e.target.value)}
-                  placeholder="Descrizione (opzionale)"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="file"
-                    onChange={(e) => setSpesaFile(e.target.files?.[0] || null)}
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    className="flex-1 text-sm"
-                  />
-                  <button
-                    onClick={handleUploadSpesa}
-                    disabled={!spesaFile || uploadingSpesa}
-                    className="px-3 py-2 bg-[#1E4D8C] text-white text-sm rounded-md disabled:opacity-50"
-                  >
-                    <Upload size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Admin Actions */}
           {isAdmin && rimborso.stato === 'in_attesa' && (
