@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { formatDateTime } from '../lib/utils';
+import { formatDateTime, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import { Megaphone, Plus, Trash2, Link as LinkIcon, X, Upload, Download, Paperclip } from 'lucide-react';
 
@@ -15,7 +15,7 @@ export default function BachecaPage() {
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canPost = ['segreteria', 'segretario', 'admin', 'superadmin'].includes(user?.ruolo);
+  const canPost = hasAnyRole(user, ['segreteria', 'segretario', 'admin', 'superadmin']);
 
   useEffect(() => {
     fetchAnnunci();

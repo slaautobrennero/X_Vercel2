@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { formatDateTime } from '../lib/utils';
+import { formatDateTime, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import { History, Filter, User, FileText, Shield, Power, Trash2, KeyRound, Check, X as XIcon, CreditCard } from 'lucide-react';
 
@@ -59,7 +59,7 @@ export default function AuditLogPage() {
           <h1 className="text-2xl font-bold text-gray-900 font-['Manrope']">Audit Log</h1>
           <p className="text-gray-600 mt-1">
             Storico azioni sensibili
-            {!['superadmin', 'superuser'].includes(user?.ruolo) && ' (sede di appartenenza)'}
+            {!hasAnyRole(user, ['superadmin', 'superuser']) && ' (sede di appartenenza)'}
           </p>
         </div>
       </div>

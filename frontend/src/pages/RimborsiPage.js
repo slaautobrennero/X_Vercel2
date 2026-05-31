@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { formatDate, formatCurrency, STATI_RIMBORSO } from '../lib/utils';
+import { formatDate, formatCurrency, STATI_RIMBORSO, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText, History } from 'lucide-react';
 import { RimborsoHistoryModal } from './AuditLogPage';
@@ -36,7 +36,7 @@ export default function RimborsiPage() {
   const [calcolandoKm, setCalcolandoKm] = useState(false);
   const [selectedMotivo, setSelectedMotivo] = useState(null);
 
-  const isAdmin = ['admin', 'cassiere', 'superadmin'].includes(user?.ruolo);
+  const isAdmin = hasAnyRole(user, ['admin', 'cassiere', 'superadmin']);
 
   useEffect(() => {
     fetchData();

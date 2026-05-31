@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { hasRole } from '../lib/utils';
 import axios from 'axios';
 import { Settings, Plus, Edit, Trash2, X, Check } from 'lucide-react';
 
@@ -83,7 +84,7 @@ export default function MotiviRimborsoPage() {
     });
   };
 
-  if (user?.ruolo !== 'superadmin') {
+  if (!hasRole(user, 'superadmin')) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Accesso non autorizzato</p>

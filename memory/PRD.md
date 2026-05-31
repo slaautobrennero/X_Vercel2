@@ -1,42 +1,48 @@
 # Portale SLA — PRD
 
 ## Original Problem
-Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionarie autostradali. Sistema con 8 ruoli (SuperAdmin, SuperUser, Admin, Cassiere, Segretario, Segreteria, Delegato, Iscritto). Funzionalità: registrazione differenziata, rimborsi con calcolo KM via Google Maps, modulistica/documenti (max 5MB), bacheca/comunicati, notifiche, export PDF/Excel. Deploy locale Raspberry Pi 4 (DietPi) con Docker.
+Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionarie autostradali. Sistema con 8 ruoli **multi-assegnabili** (SuperAdmin, SuperUser, Admin, Cassiere, Segretario, Segreteria, Delegato, Iscritto). Funzionalità: registrazione differenziata, rimborsi con calcolo KM via Google Maps, modulistica/documenti (max 5MB), bacheca/comunicati, notifiche, export PDF/Excel. Deploy locale Raspberry Pi 4 (DietPi) con Docker.
 
 ## Tech Stack
 - Frontend: React + Tailwind + shadcn/ui
 - Backend: FastAPI + MongoDB
 - Deploy: Docker Compose su Raspberry Pi 4
 - Hosting pubblico: Cloudflare Tunnel + dominio Aruba `portale-sla.it`
-- Backup automatico: rclone → Google Drive (cron 03:00)
+- Backup automatico: rclone → Google Drive (cron 03:00 DB / 03:15 uploads)
 - Maps: Google Directions API
 
 ## Stato attuale
-✅ Online su https://portale-sla.it via Cloudflare Tunnel (HTTPS)  
-✅ Tunnel configurato come servizio systemd (auto-start)  
-✅ Backup automatici GDrive  
-✅ Login funzionante (SuperAdmin)
+- ✅ Online su https://portale-sla.it via Cloudflare Tunnel (HTTPS)
+- ✅ Backup MongoDB cifrati AES-256 + uploads + Google Drive sync verificati (30/05/2026)
+- ✅ Multi-upload ricevute + Export PDF/Excel/CSV verificati
+- ✅ **Multi-ruolo (31/05/2026)**: un utente può possedere PIÙ ruoli contemporaneamente (es. Admin+Cassiere, Delegato+Cassiere). Solo `Iscritto` resta single-role.
 
-## Ruoli
-- **SuperAdmin / SuperUser**: tutto, multi-sede
-- **Admin**: gestione completa concessionaria (rimborsi, utenti, contatti, bacheca)
-- **Cassiere** (NUOVO 28/04): come admin sui rimborsi (approva, paga, vede report)
-- **Segretario**: gestione utenti, contatti, bacheca, documenti
-- **Segreteria**: contatti, bacheca, documenti
-- **Delegato**: solo creazione/visualizzazione propri rimborsi
-- **Iscritto**: solo bacheca/documenti, niente rimborsi
+## Ruoli (permessi BASE — atomici)
+| Ruolo | Crea rimborso | Approva/Rifiuta | Paga rimborso | Vede rimborsi |
+|---|:---:|:---:|:---:|---|
+| delegato | ✅ | ❌ | ❌ | Solo i suoi |
+| segretario | ✅ | ❌ | ❌ | Della sua sede |
+| segreteria | ✅ | ❌ | ❌ | Della sua sede |
+| cassiere | ❌ | ❌ | ✅ | Della sua sede |
+| admin | ✅ | ✅ | ✅ | Della sua sede |
+| superadmin | ✅ | ✅ | ✅ | Tutte le sedi |
+| superuser | ❌ | ❌ | ❌ | Tutte (read-only) |
+| iscritto | ❌ | ❌ | ❌ | Nulla |
+
+**Multi-ruolo**: l'utente eredita l'UNIONE dei permessi dei ruoli che possiede. Esempio: `["cassiere", "delegato"]` → può creare E pagare rimborsi.
 
 ## Modello dati chiave
-- `users`: email, password_hash, ruolo, sede_id, nome, cognome, iban, indirizzo
+- `users`: email, password_hash, **`ruolo`** (legacy, = ruoli[0]), **`ruoli: List[str]`** (sorgente di verità), sede_id, nome, cognome, iban, indirizzo, disabled, must_change_password
 - `sedi`: nome, codice, indirizzo, tariffa_km, rimborso_pasti, rimborso_autostrada
 - `motivi_rimborso`: nome, richiede_note
-- `rimborsi`: user_id, sede_id, data, motivo_id, km, importi, stato (in_attesa→approvato→pagato | rifiutato), contabile, ricevute_spese, pagato_by_nome
+- `rimborsi`: user_id, sede_id, data, motivo_id, km, importi, stato (in_attesa→approvato→pagato | rifiutato), contabile, ricevute, ricevute_spese, pagato_by_nome
 - `annunci`: titolo, contenuto, link_documento, allegato_filename, allegato_path, sede_id, autore
 - `documenti`: nome, categoria, descrizione, filename, path, sede_id
 - `notifiche`: user_id, sede_id, tipo, titolo, messaggio, letto
-- `contatti` (NUOVO): titolo, descrizione, tipo (link|whatsapp|telegram|email|telefono), valore, sede_id
+- `contatti`: titolo, descrizione, tipo (link|whatsapp|telegram|email|telefono), valore, sede_id
+- `audit_log`: actor_name, action, target_type, target_label, old_value, new_value
 
-## Flusso Rimborsi (aggiornato 28/04)
+## Flusso Rimborsi
 ```
 Iscritto → "in_attesa" (BIANCO)
                 ↓
@@ -47,40 +53,40 @@ Admin/Cassiere paga diretto (con contabile) → "pagato" (VERDE)
 - Contabile **obbligatoria** per arrivare a "pagato"
 - Notifiche: nuovo rimborso → Admin + Cassiere; approvato/rifiutato → utente; pagato → utente + admin + cassiere
 
+## Architettura Multi-Ruolo (31/05/2026)
+**Backend**:
+- Helper centralizzati: `user_has_role(user, "X")`, `user_has_any_role(user, [...])`, `_user_roles(user)`
+- `_notify_users_by_role` query con `$or: [{ruolo: ...}, {ruoli: ...}]` (legacy + nuovo)
+- Migrazione automatica su startup: utenti senza `ruoli` → `ruoli: [ruolo]`
+- Endpoint `PUT /users/{id}/ruolo` accetta JSON `{ruoli: [...]}` (validato, dedup, iscritto-exclusive)
+- Tutti i `user["ruolo"] in [...]` sostituiti con helper
+
+**Frontend**:
+- Helper `hasRole(user, role)`, `hasAnyRole(user, roles)`, `getUserRoles(user)` in `lib/utils.js`
+- `RUOLO_BADGE_COLOR` mappa colori per badge per ruolo
+- Sidebar mostra tutte le voci di menu in base all'unione dei ruoli
+- `UtentiPage`: checkbox multipli con vincolo "iscritto esclusivo"
+- Lista utenti / Profilo / Dashboard: visualizza tutti i ruoli come pillole separate
+
 ## Backlog prossime sessioni
-1. Favicon SLA tab
-2. Mostra valore contatto + copia
-3. Reset password (admin/segretario)
-4. Cancella + disattiva utente
-5. Cambio password da Profilo
-6. Password dimenticata via email
-7. Storico azioni admin (audit log)
-8. Filtri/ricerca rimborsi
-9. Export PDF/Excel rendiconti
-10. Email notifica rimborso pagato (no contabile)
-11. Auto-logout 30 min
-12. PWA installabile
-13. Conferma email registrazione
-14. GDPR (consenso + export + cancellazione)
-15. Multi-allegati ricevute con anteprima
-16. Promemoria rimborsi pendenti (>7gg)
-17. Ricerca globale
-18. Storico variazioni rimborsi
-19. Backup DB cifrato (password SuperAdmin) + backup uploads separato non cifrato
-20. Pulizia Docker automatica settimanale (immagini/cache orfane)
-21. Banner "manutenzione programmata" 30 min prima backup/pulizia
-22. Verificare path esatto volume uploads (4-5 file utente presenti)
+- 🟠 P1: Filtri avanzati rimborsi (date range, stato, utente, importo)
+- 🟠 P1: Promemoria rimborsi pendenti >7gg (notifiche admin/cassieri)
+- 🟡 P2: PWA installabile (manifest.json + service-worker già pronti)
+- 🟡 P2: GDPR (consenso privacy, export dati personali, cancellazione)
+- 🟡 P2: Email integration (Resend/SendGrid: forgot-password, conferma registrazione, notifica pagamento)
+- 🔵 P3: Ricerca globale, Favicon SLA, Auto-logout 30 min
+- 🔵 P3: Refactoring `server.py` (>2400 righe) in moduli `routes/`
+- 🔵 P3: Fase 4 multi-ruolo — rimozione campo legacy `ruolo` quando tutto stabile
 
 ## Endpoint principali
-- `/api/auth/login`, `/api/auth/register`, `/api/auth/logout`
+- `/api/auth/login`, `/api/auth/register`, `/api/auth/logout`, `/api/auth/me`
 - `/api/sedi`, `/api/motivi-rimborso`
 - `/api/rimborsi` (GET/POST/PUT)
-- `/api/rimborsi/{id}/contabile` (pagamento + upload obbligatorio)
-- `/api/rimborsi/{id}/ricevute`, `/ricevute-spese`
+- `/api/rimborsi/{id}/contabile`, `/ricevute`, `/ricevute-multi`, `/ricevute-spese`
 - `/api/calcola-km` (Google Directions)
 - `/api/annunci` (con allegato file), `/api/annunci/{id}/download`
 - `/api/documenti` (upload), `/api/documenti/{id}/download`
-- `/api/notifiche`
-- `/api/contatti` (CRUD) — NUOVO
-- `/api/users`, `/api/users/{id}/ruolo`
-- `/api/reports/rimborsi-annuali`, `/rimborsi-export`
+- `/api/notifiche`, `/api/contatti` (CRUD)
+- `/api/users` (lista include `ruoli` array), `/api/users/{id}/ruolo` (PUT con `{ruoli: [...]}`)
+- `/api/reports/rimborsi-annuali`, `/api/reports/rimborsi-export?formato=pdf|xlsx|csv`
+- `/api/audit-log`

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { RUOLI } from '../lib/utils';
+import { RUOLI, RUOLO_BADGE_COLOR } from '../lib/utils';
 import axios from 'axios';
 import { User, Mail, Phone, MapPin, CreditCard, Save, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -119,14 +119,15 @@ export default function ProfiloPage() {
           <div>
             <h2 className="text-xl font-semibold text-gray-900">{user?.nome} {user?.cognome}</h2>
             <p className="text-gray-600">{user?.email}</p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                user?.ruolo === 'superadmin' ? 'bg-purple-100 text-purple-800' :
-                user?.ruolo === 'admin' ? 'bg-blue-100 text-blue-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {RUOLI[user?.ruolo] || user?.ruolo}
-              </span>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              {(user?.ruoli || [user?.ruolo]).filter(Boolean).map(r => (
+                <span
+                  key={r}
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${RUOLO_BADGE_COLOR[r] || 'bg-gray-100 text-gray-800'}`}
+                >
+                  {RUOLI[r] || r}
+                </span>
+              ))}
               {user?.sede_nome && (
                 <span className="text-sm text-gray-500">• {user.sede_nome}</span>
               )}

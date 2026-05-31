@@ -54,6 +54,38 @@ export const RUOLI = {
   iscritto: 'Iscritto'
 };
 
+// Colori badge per ogni ruolo (Tailwind classes)
+export const RUOLO_BADGE_COLOR = {
+  superadmin: 'bg-purple-100 text-purple-800',
+  superuser: 'bg-fuchsia-100 text-fuchsia-800',
+  admin: 'bg-blue-100 text-blue-800',
+  cassiere: 'bg-emerald-100 text-emerald-800',
+  segretario: 'bg-indigo-100 text-indigo-800',
+  segreteria: 'bg-cyan-100 text-cyan-800',
+  delegato: 'bg-green-100 text-green-800',
+  iscritto: 'bg-gray-100 text-gray-800'
+};
+
+// ==================== MULTI-RUOLO HELPERS ====================
+// Ogni utente ha un array `user.ruoli` (sorgente di verità) + il legacy `user.ruolo`
+// per retro-compat (= ruoli[0]).
+
+export function getUserRoles(user) {
+  if (!user) return [];
+  if (Array.isArray(user.ruoli) && user.ruoli.length > 0) return user.ruoli;
+  if (user.ruolo) return [user.ruolo];
+  return [];
+}
+
+export function hasRole(user, role) {
+  return getUserRoles(user).includes(role);
+}
+
+export function hasAnyRole(user, roles) {
+  const userRoles = getUserRoles(user);
+  return roles.some(r => userRoles.includes(r));
+}
+
 // Classi Tailwind per badge stato rimborso
 // in_attesa: bianco | approvato: giallo | rifiutato: rosso | pagato: verde
 export const STATI_RIMBORSO = {

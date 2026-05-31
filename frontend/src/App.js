@@ -33,6 +33,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { hasAnyRole } from './lib/utils';
 import './App.css';
 
 // Pages - Pagine dell'applicazione
@@ -77,8 +78,8 @@ function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
-  // Check role permissions
-  if (allowedRoles && !allowedRoles.includes(user.ruolo)) {
+  // Check role permissions (multi-ruolo: basta che possieda UNO dei ruoli ammessi)
+  if (allowedRoles && !hasAnyRole(user, allowedRoles)) {
     return <Navigate to="/" replace />;
   }
 

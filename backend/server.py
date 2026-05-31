@@ -118,6 +118,7 @@ class UserCreate(UserBase):
     password: str  # Verrà hashato con bcrypt
     sede_id: Optional[str] = None  # Riferimento alla sede (A22, CAV, etc.)
     ruolo: str = "iscritto"  # Default: iscritto (accesso solo bacheca/documenti)
+    ruoli: Optional[List[str]] = None  # Multi-ruolo (opzionale, prevale su `ruolo`)
     # Ruoli disponibili: superadmin, superuser, admin, cassiere, segretario, segreteria, delegato, iscritto
 
 class UserUpdate(BaseModel):
@@ -141,7 +142,8 @@ class UserResponse(BaseModel):
     citta: Optional[str] = None
     cap: Optional[str] = None
     iban: Optional[str] = None
-    ruolo: str
+    ruolo: str  # Legacy: ruolo "primario" (= ruoli[0])
+    ruoli: List[str] = []  # Multi-ruolo: lista completa dei ruoli dell'utente
     sede_id: Optional[str] = None
     sede_nome: Optional[str] = None
     created_at: str
@@ -377,6 +379,13 @@ async def get_current_user(request: Request) -> dict:
         user.pop("_id", None)
         user.pop("password_hash", None)  # NEVER return password
         
+        # Multi-ruolo: garantisce campo 'ruoli' sempre presente (fallback da legacy 'ruolo')
+        if not user.get("ruoli"):
+            user["ruoli"] = [user["ruolo"]] if user.get("ruolo") else []
+        # Mantieni 'ruolo' sincronizzato col primo elemento per retro-compat
+        if user.get("ruoli") and not user.get("ruolo"):
+            user["ruolo"] = user["ruoli"][0]
+        
         # Add sede name if user belongs to a sede
         if user.get("sede_id"):
             sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])})
@@ -388,24 +397,87 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
 
+# ==================== ROLES HELPERS ====================
+# Sistema MULTI-RUOLO: ogni utente ha un array `ruoli` (sorgente di verità).
+# Il campo legacy `ruolo` resta sincronizzato con ruoli[0] per retro-compat.
+
+VALID_ROLES = ["superadmin", "superuser", "admin", "segretario", "segreteria", "cassiere", "delegato", "iscritto"]
+
+
+def _user_roles(user: Optional[dict]) -> List[str]:
+    """Ritorna la lista dei ruoli di un utente, gestendo schema legacy."""
+    if not user:
+        return []
+    ruoli = user.get("ruoli")
+    if isinstance(ruoli, list) and ruoli:
+        return ruoli
+    ruolo_legacy = user.get("ruolo")
+    return [ruolo_legacy] if ruolo_legacy else []
+
+
+def user_has_role(user: Optional[dict], role: str) -> bool:
+    """True se l'utente possiede il ruolo indicato."""
+    return role in _user_roles(user)
+
+
+def user_has_any_role(user: Optional[dict], roles: List[str]) -> bool:
+    """True se l'utente possiede almeno uno dei ruoli indicati."""
+    user_roles = _user_roles(user)
+    return any(r in user_roles for r in roles)
+
+
+def normalize_roles_input(ruoli: Optional[List[str]], ruolo_legacy: Optional[str]) -> List[str]:
+    """
+    Normalizza l'input ruoli da API: deduplica, valida, applica regole.
+    Regola: se 'iscritto' è presente, deve essere l'unico ruolo.
+    """
+    raw: List[str] = []
+    if ruoli:
+        raw = list(ruoli)
+    elif ruolo_legacy:
+        raw = [ruolo_legacy]
+
+    # Deduplica preservando ordine
+    seen = set()
+    cleaned: List[str] = []
+    for r in raw:
+        if r in VALID_ROLES and r not in seen:
+            seen.add(r)
+            cleaned.append(r)
+
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Nessun ruolo valido specificato")
+
+    if "iscritto" in cleaned and len(cleaned) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Il ruolo 'iscritto' non può essere combinato con altri ruoli"
+        )
+
+    return cleaned
+
+
 # ==================== NOTIFICATION HELPERS ====================
 
 async def _notify_users_by_role(roles: list, sede_id: Optional[str], notifica_data: dict, include_global: bool = False):
     """
     Crea una notifica per ogni utente che ha uno dei ruoli indicati nella sede.
     Se include_global=True include anche superadmin/superuser (sede_id None).
+    Supporta sia schema legacy (campo `ruolo`) sia multi-ruolo (campo `ruoli` array).
     """
+    # Match sia su 'ruolo' legacy sia su array 'ruoli'
+    role_match = {"$or": [{"ruolo": {"$in": roles}}, {"ruoli": {"$in": roles}}]}
     if sede_id and include_global:
         query = {
             "$and": [
-                {"ruolo": {"$in": roles}},
+                role_match,
                 {"$or": [{"sede_id": sede_id}, {"sede_id": None}]}
             ]
         }
     elif sede_id:
-        query = {"ruolo": {"$in": roles}, "sede_id": sede_id}
+        query = {"$and": [role_match, {"sede_id": sede_id}]}
     else:
-        query = {"ruolo": {"$in": roles}}
+        query = role_match
 
     notifiche_to_insert = []
     async for u in db.users.find(query, {"_id": 1}):
@@ -559,6 +631,7 @@ async def register(user_data: UserCreate, response: Response):
         "cap": user_data.cap if ruolo != "iscritto" else None,
         "iban": user_data.iban if ruolo != "iscritto" else None,
         "ruolo": ruolo,
+        "ruoli": [ruolo],
         "sede_id": user_data.sede_id,
         "disabled": False,
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -576,6 +649,7 @@ async def register(user_data: UserCreate, response: Response):
     user_doc["id"] = user_id
     user_doc.pop("password_hash")
     user_doc.pop("_id", None)
+    user_doc["ruoli"] = user_doc.get("ruoli") or [user_doc.get("ruolo")]
     
     return user_doc
 
@@ -625,6 +699,7 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
         "cap": user.get("cap"),
         "iban": user.get("iban"),
         "ruolo": user["ruolo"],
+        "ruoli": user.get("ruoli") or [user["ruolo"]],
         "sede_id": user.get("sede_id"),
         "created_at": user["created_at"]
     }
@@ -720,17 +795,17 @@ async def admin_reset_password(user_id: str, request: Request):
     """
     current_user = await get_current_user(request)
     
-    if current_user["ruolo"] not in ["admin", "segretario", "superadmin"]:
+    if not user_has_any_role(current_user, ["admin", "segretario", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     target_user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not target_user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
     
-    if current_user["ruolo"] != "superadmin":
+    if not user_has_role(current_user, "superadmin"):
         if target_user.get("sede_id") != current_user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
-        if target_user.get("ruolo") in ["superadmin", "superuser"]:
+        if user_has_any_role(target_user, ["superadmin", "superuser"]):
             raise HTTPException(status_code=403, detail="Non autorizzato a resettare questo ruolo")
     
     temp_password = generate_temporary_password(12)
@@ -785,7 +860,7 @@ async def toggle_user_disabled(user_id: str, data: ToggleDisableRequest, request
     """
     current_user = await get_current_user(request)
     
-    if current_user["ruolo"] not in ["admin", "segretario", "superadmin"]:
+    if not user_has_any_role(current_user, ["admin", "segretario", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     if user_id == current_user["id"]:
@@ -795,10 +870,10 @@ async def toggle_user_disabled(user_id: str, data: ToggleDisableRequest, request
     if not target_user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
     
-    if current_user["ruolo"] != "superadmin":
+    if not user_has_role(current_user, "superadmin"):
         if target_user.get("sede_id") != current_user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
-        if target_user.get("ruolo") in ["superadmin", "superuser"]:
+        if user_has_any_role(target_user, ["superadmin", "superuser"]):
             raise HTTPException(status_code=403, detail="Non autorizzato a modificare questo ruolo")
     
     update_fields = {
@@ -834,7 +909,7 @@ async def delete_user(user_id: str, request: Request):
     """
     current_user = await get_current_user(request)
     
-    if current_user["ruolo"] != "superadmin":
+    if not user_has_role(current_user, "superadmin"):
         raise HTTPException(status_code=403, detail="Solo SuperAdmin può cancellare definitivamente gli utenti")
     
     if user_id == current_user["id"]:
@@ -899,11 +974,11 @@ async def get_audit_log(
     """
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["superadmin", "superuser", "admin", "cassiere", "segretario"]:
+    if not user_has_any_role(user, ["superadmin", "superuser", "admin", "cassiere", "segretario"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["sede_id"] = user.get("sede_id")
     
     if target_type:
@@ -978,7 +1053,7 @@ async def get_sedi(request: Request):
 @api_router.post("/sedi")
 async def create_sede(sede_data: SedeCreate, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin"]:
+    if not user_has_any_role(user, ["superadmin"]):
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può creare sedi")
     
     existing = await db.sedi.find_one({"codice": sede_data.codice})
@@ -1003,7 +1078,7 @@ async def create_sede(sede_data: SedeCreate, request: Request):
 @api_router.put("/sedi/{sede_id}")
 async def update_sede(sede_id: str, sede_data: SedeUpdate, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin", "admin"]:
+    if not user_has_any_role(user, ["superadmin", "admin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     update_data = {k: v for k, v in sede_data.model_dump().items() if v is not None}
@@ -1019,7 +1094,7 @@ async def update_sede(sede_id: str, sede_data: SedeUpdate, request: Request):
 @api_router.delete("/sedi/{sede_id}")
 async def delete_sede(sede_id: str, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin"]:
+    if not user_has_any_role(user, ["superadmin"]):
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può eliminare sedi")
     
     result = await db.sedi.delete_one({"_id": ObjectId(sede_id)})
@@ -1043,7 +1118,7 @@ async def get_motivi_rimborso(request: Request):
 @api_router.post("/motivi-rimborso")
 async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin"]:
+    if not user_has_any_role(user, ["superadmin"]):
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
     
     motivo_doc = {
@@ -1061,7 +1136,7 @@ async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Req
 @api_router.put("/motivi-rimborso/{motivo_id}")
 async def update_motivo_rimborso(motivo_id: str, motivo_data: MotivoRimborsoUpdate, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin"]:
+    if not user_has_any_role(user, ["superadmin"]):
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
     
     update_data = {k: v for k, v in motivo_data.model_dump().items() if v is not None}
@@ -1077,7 +1152,7 @@ async def update_motivo_rimborso(motivo_id: str, motivo_data: MotivoRimborsoUpda
 @api_router.delete("/motivi-rimborso/{motivo_id}")
 async def delete_motivo_rimborso(motivo_id: str, request: Request):
     user = await get_current_user(request)
-    if user["ruolo"] not in ["superadmin"]:
+    if not user_has_any_role(user, ["superadmin"]):
         raise HTTPException(status_code=403, detail="Solo il SuperAdmin può gestire i motivi")
     
     result = await db.motivi_rimborso.delete_one({"_id": ObjectId(motivo_id)})
@@ -1094,8 +1169,8 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     
     query = {}
     
-    if user["ruolo"] not in ["superadmin", "superuser"]:
-        if user["ruolo"] in ["admin", "cassiere"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
+        if user_has_any_role(user, ["admin", "cassiere"]):
             query["sede_id"] = user.get("sede_id")
         else:
             query["user_id"] = user["id"]
@@ -1143,7 +1218,7 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
     user = await get_current_user(request)
     
     # REGOLA: Solo ruoli con accesso alla sezione rimborsi possono crearli
-    if user["ruolo"] not in ["delegato", "segreteria", "segretario", "admin", "superadmin"]:
+    if not user_has_any_role(user, ["delegato", "segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Gli iscritti non possono richiedere rimborsi")
     
     # Check if motivo requires note (es: "Altro" richiede sempre note)
@@ -1225,7 +1300,7 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
+    if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
@@ -1266,7 +1341,7 @@ async def upload_ricevute_multi(rimborso_id: str, request: Request, files: List[
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+    if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "cassiere", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     uploaded = []
@@ -1315,9 +1390,9 @@ async def download_ricevuta(rimborso_id: str, file_id: str, request: Request):
     
     # Permessi: proprietario o admin/cassiere/segretario
     if rimborso["user_id"] != user["id"]:
-        if user["ruolo"] not in ["admin", "cassiere", "segretario", "superadmin", "superuser"]:
+        if not user_has_any_role(user, ["admin", "cassiere", "segretario", "superadmin", "superuser"]):
             raise HTTPException(status_code=403, detail="Non autorizzato")
-        if user["ruolo"] not in ["superadmin", "superuser"] and rimborso.get("sede_id") != user.get("sede_id"):
+        if not user_has_any_role(user, ["superadmin", "superuser"]) and rimborso.get("sede_id") != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
     # Cerca in ricevute e ricevute_spese
@@ -1344,7 +1419,7 @@ async def delete_ricevuta(rimborso_id: str, file_id: str, request: Request):
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+    if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "cassiere", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     if rimborso.get("stato") not in ["in_attesa", None]:
@@ -1385,7 +1460,7 @@ async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: Upload
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if rimborso["user_id"] != user["id"] and user["ruolo"] not in ["admin", "superadmin"]:
+    if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
@@ -1423,14 +1498,14 @@ async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: Upload
 async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin"]):
         raise HTTPException(status_code=403, detail="Solo admin/cassiere può gestire i rimborsi")
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if user["ruolo"] in ["admin", "cassiere"] and rimborso.get("sede_id") != user.get("sede_id"):
+    if user_has_any_role(user, ["admin", "cassiere"]) and rimborso.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
     # Lo stato "pagato" può essere impostato SOLO via /contabile (con upload obbligatorio)
@@ -1481,14 +1556,14 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
 async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "cassiere", "superadmin"]:
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin"]):
         raise HTTPException(status_code=403, detail="Solo admin/cassiere può caricare contabili")
     
     rimborso = await db.rimborsi.find_one({"_id": ObjectId(rimborso_id)})
     if not rimborso:
         raise HTTPException(status_code=404, detail="Rimborso non trovato")
     
-    if user["ruolo"] in ["admin", "cassiere"] and rimborso.get("sede_id") != user.get("sede_id"):
+    if user_has_any_role(user, ["admin", "cassiere"]) and rimborso.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
     if rimborso.get("stato") == "rifiutato":
@@ -1586,7 +1661,7 @@ async def get_annunci(request: Request):
     user = await get_current_user(request)
     
     query = {}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["$or"] = [
             {"sede_id": user.get("sede_id")},
             {"sede_id": None}
@@ -1610,7 +1685,7 @@ async def create_annuncio(
 ):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
+    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     allegato_filename = None
@@ -1642,7 +1717,7 @@ async def create_annuncio(
         "link_documento": link_documento if link_documento else None,
         "allegato_filename": allegato_filename,
         "allegato_path": allegato_path,
-        "sede_id": user.get("sede_id") if user["ruolo"] != "superadmin" else None,
+        "sede_id": user.get("sede_id") if not user_has_role(user, "superadmin") else None,
         "autore_id": user["id"],
         "autore_nome": f"{user['nome']} {user['cognome']}",
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -1679,7 +1754,7 @@ async def download_allegato_annuncio(annuncio_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Nessun allegato per questo annuncio")
     
     # Controllo sede per utenti non super
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         if annuncio.get("sede_id") and annuncio["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -1693,7 +1768,7 @@ async def download_allegato_annuncio(annuncio_id: str, request: Request):
 async def delete_annuncio(annuncio_id: str, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
+    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     annuncio = await db.annunci.find_one({"_id": ObjectId(annuncio_id)})
@@ -1722,7 +1797,7 @@ async def get_contatti(request: Request):
     user = await get_current_user(request)
     
     query = {}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["sede_id"] = user.get("sede_id")
     
     contatti = []
@@ -1738,7 +1813,7 @@ async def get_contatti(request: Request):
 async def create_contatto(contatto_data: ContattoCreate, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+    if not user_has_any_role(user, EDIT_CONTATTO_ROLES):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     if contatto_data.tipo not in VALID_CONTATTO_TIPI:
@@ -1766,7 +1841,7 @@ async def create_contatto(contatto_data: ContattoCreate, request: Request):
 async def update_contatto(contatto_id: str, contatto_data: ContattoUpdate, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+    if not user_has_any_role(user, EDIT_CONTATTO_ROLES):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     contatto = await db.contatti.find_one({"_id": ObjectId(contatto_id)})
@@ -1774,7 +1849,7 @@ async def update_contatto(contatto_id: str, contatto_data: ContattoUpdate, reque
         raise HTTPException(status_code=404, detail="Contatto non trovato")
     
     # Solo stessa sede (eccetto superadmin)
-    if user["ruolo"] != "superadmin" and contatto.get("sede_id") != user.get("sede_id"):
+    if not user_has_role(user, "superadmin") and contatto.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
     update_data = {k: v for k, v in contatto_data.model_dump().items() if v is not None}
@@ -1795,14 +1870,14 @@ async def update_contatto(contatto_id: str, contatto_data: ContattoUpdate, reque
 async def delete_contatto(contatto_id: str, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in EDIT_CONTATTO_ROLES:
+    if not user_has_any_role(user, EDIT_CONTATTO_ROLES):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     contatto = await db.contatti.find_one({"_id": ObjectId(contatto_id)})
     if not contatto:
         raise HTTPException(status_code=404, detail="Contatto non trovato")
     
-    if user["ruolo"] != "superadmin" and contatto.get("sede_id") != user.get("sede_id"):
+    if not user_has_role(user, "superadmin") and contatto.get("sede_id") != user.get("sede_id"):
         raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
     
     await db.contatti.delete_one({"_id": ObjectId(contatto_id)})
@@ -1818,7 +1893,7 @@ async def get_documenti(request: Request, categoria: Optional[str] = None):
     user = await get_current_user(request)
     
     query = {}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["$or"] = [
             {"sede_id": user.get("sede_id")},
             {"sede_id": None}
@@ -1845,7 +1920,7 @@ async def upload_documento(
 ):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
+    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
@@ -1869,7 +1944,7 @@ async def upload_documento(
         "descrizione": descrizione,
         "filename": file.filename,
         "path": filename,
-        "sede_id": user.get("sede_id") if user["ruolo"] != "superadmin" else None,
+        "sede_id": user.get("sede_id") if not user_has_role(user, "superadmin") else None,
         "uploaded_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -1901,7 +1976,7 @@ async def download_documento(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento non trovato")
     
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         if doc.get("sede_id") and doc["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
     
@@ -1915,7 +1990,7 @@ async def download_documento(doc_id: str, request: Request):
 async def delete_documento(doc_id: str, request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["segreteria", "segretario", "admin", "superadmin"]:
+    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     doc = await db.documenti.find_one({"_id": ObjectId(doc_id)})
@@ -1980,17 +2055,20 @@ async def mark_all_notifiche_lette(request: Request):
 async def get_users(request: Request):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser", "segretario"]:
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser", "segretario"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["sede_id"] = user.get("sede_id")
     
     users = []
     async for u in db.users.find(query, {"password_hash": 0}):
         u["id"] = str(u["_id"])
         u.pop("_id")
+        # Multi-ruolo: garantisci campo `ruoli` sempre presente
+        if not u.get("ruoli"):
+            u["ruoli"] = [u["ruolo"]] if u.get("ruolo") else []
         if u.get("sede_id"):
             sede = await db.sedi.find_one({"_id": ObjectId(u["sede_id"])})
             if sede:
@@ -2003,7 +2081,7 @@ async def get_users(request: Request):
 async def update_user(user_id: str, user_data: UserUpdate, request: Request):
     current_user = await get_current_user(request)
     
-    if user_id != current_user["id"] and current_user["ruolo"] not in ["admin", "superadmin"]:
+    if user_id != current_user["id"] and not user_has_any_role(current_user, ["admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     update_data = {k: v for k, v in user_data.model_dump().items() if v is not None}
@@ -2014,27 +2092,49 @@ async def update_user(user_id: str, user_data: UserUpdate, request: Request):
     
     return {"message": "Utente aggiornato"}
 
+class UpdateRuoliRequest(BaseModel):
+    ruoli: List[str]
+
+
 @api_router.put("/users/{user_id}/ruolo")
-async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...)):
+async def update_user_role(user_id: str, request: Request, payload: UpdateRuoliRequest):
+    """
+    Aggiorna i ruoli di un utente.
+    Accetta una lista `ruoli` (multi-ruolo).
+    Vincoli:
+    - 'iscritto' non combinabile con altri ruoli
+    - Solo superadmin può assegnare/togliere superuser/superadmin
+    """
     current_user = await get_current_user(request)
     
-    if current_user["ruolo"] not in ["admin", "superadmin"]:
+    if not user_has_any_role(current_user, ["admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
+    # Determina i ruoli assegnabili in base al ruolo del current_user
     valid_roles = ["iscritto", "delegato", "segreteria", "segretario", "cassiere", "admin"]
-    if current_user["ruolo"] == "superadmin":
+    if user_has_role(current_user, "superadmin"):
         valid_roles.extend(["superuser", "superadmin"])
     
-    if ruolo not in valid_roles:
-        raise HTTPException(status_code=400, detail="Ruolo non valido")
+    # Valida ogni ruolo richiesto sia tra quelli assegnabili
+    for r in payload.ruoli:
+        if r not in valid_roles:
+            raise HTTPException(status_code=400, detail=f"Ruolo '{r}' non assegnabile")
+    
+    # Normalizza (dedup + iscritto exclusive)
+    nuovi_ruoli = normalize_roles_input(payload.ruoli, None)
     
     target_user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not target_user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
     
-    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"ruolo": ruolo}})
+    # Aggiorna sia il campo legacy `ruolo` (= primario) sia `ruoli` (array completo)
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"ruolo": nuovi_ruoli[0], "ruoli": nuovi_ruoli}}
+    )
     
-    if target_user.get("ruolo") != ruolo:
+    old_ruoli = target_user.get("ruoli") or [target_user.get("ruolo")]
+    if sorted(old_ruoli) != sorted(nuovi_ruoli):
         await _log_audit(
             actor=current_user,
             action="user.change_role",
@@ -2042,11 +2142,11 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
             target_id=user_id,
             target_label=f"{target_user.get('nome', '')} {target_user.get('cognome', '')} ({target_user.get('email', '')})".strip(),
             sede_id=target_user.get("sede_id"),
-            old_value=target_user.get("ruolo"),
-            new_value=ruolo,
+            old_value=", ".join(old_ruoli),
+            new_value=", ".join(nuovi_ruoli),
         )
     
-    return {"message": "Ruolo aggiornato"}
+    return {"message": "Ruoli aggiornati", "ruoli": nuovi_ruoli}
 
 # ==================== REPORTS ====================
 
@@ -2054,11 +2154,11 @@ async def update_user_role(user_id: str, request: Request, ruolo: str = Form(...
 async def get_report_rimborsi_annuali(request: Request, anno: int):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser"]:
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {"data": {"$regex": f"^{anno}"}}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["sede_id"] = user.get("sede_id")
     
     pipeline = [
@@ -2088,11 +2188,11 @@ async def get_report_rimborsi_annuali(request: Request, anno: int):
 async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
     user = await get_current_user(request)
     
-    if user["ruolo"] not in ["admin", "cassiere", "superadmin", "superuser"]:
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
     
     query = {"data": {"$regex": f"^{anno}"}}
-    if user["ruolo"] not in ["superadmin", "superuser"]:
+    if not user_has_any_role(user, ["superadmin", "superuser"]):
         query["sede_id"] = user.get("sede_id")
     
     rimborsi = []
@@ -2274,6 +2374,19 @@ async def startup():
     await db.sedi.create_index("codice", unique=True)
     await db.login_attempts.create_index("identifier")
     
+    # === MIGRAZIONE MULTI-RUOLO ===
+    # Per ogni utente senza il campo `ruoli`, lo crea a partire da `ruolo` legacy.
+    migrated = 0
+    async for u in db.users.find({"ruoli": {"$exists": False}}, {"_id": 1, "ruolo": 1}):
+        if u.get("ruolo"):
+            await db.users.update_one(
+                {"_id": u["_id"]},
+                {"$set": {"ruoli": [u["ruolo"]]}}
+            )
+            migrated += 1
+    if migrated:
+        logger.info(f"Migrazione multi-ruolo: {migrated} utenti aggiornati con campo 'ruoli'.")
+    
     admin_email = os.environ.get("ADMIN_EMAIL", "superadmin@sla.it")
     admin_password = os.environ.get("ADMIN_PASSWORD", "SlaAdmin2024!")
     
@@ -2286,6 +2399,7 @@ async def startup():
             "nome": "Super",
             "cognome": "Admin",
             "ruolo": "superadmin",
+            "ruoli": ["superadmin"],
             "sede_id": None,
             "created_at": datetime.now(timezone.utc).isoformat()
         })

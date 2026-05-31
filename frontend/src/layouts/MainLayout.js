@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { RUOLI } from '../lib/utils';
+import { RUOLI, hasAnyRole, hasRole } from '../lib/utils';
 import ContattiSidebar from '../components/ContattiSidebar';
 import { 
   LayoutDashboard, 
@@ -32,12 +32,12 @@ export default function MainLayout() {
     navigate('/login');
   };
 
-  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
-  const canManageUsers = ['segretario', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
-  const canManageSedi = ['superadmin'].includes(user?.ruolo);
-  const canManageMotivi = ['superadmin'].includes(user?.ruolo);
-  const canViewReports = ['admin', 'cassiere', 'superadmin', 'superuser'].includes(user?.ruolo);
-  const canViewAuditLog = ['admin', 'cassiere', 'segretario', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canAccessRimborsi = hasAnyRole(user, ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser']);
+  const canManageUsers = hasAnyRole(user, ['segretario', 'admin', 'superadmin', 'superuser']);
+  const canManageSedi = hasRole(user, 'superadmin');
+  const canManageMotivi = hasRole(user, 'superadmin');
+  const canViewReports = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']);
+  const canViewAuditLog = hasAnyRole(user, ['admin', 'cassiere', 'segretario', 'superadmin', 'superuser']);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },
@@ -125,7 +125,9 @@ export default function MainLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{user?.nome} {user?.cognome}</p>
-                <p className="text-xs text-gray-500">{RUOLI[user?.ruolo] || user?.ruolo}</p>
+                <p className="text-xs text-gray-500 truncate" title={(user?.ruoli || [user?.ruolo]).map(r => RUOLI[r] || r).join(', ')}>
+                  {(user?.ruoli || [user?.ruolo]).filter(Boolean).map(r => RUOLI[r] || r).join(' · ')}
+                </p>
               </div>
             </div>
             <button

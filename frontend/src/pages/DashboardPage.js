@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { RUOLI, formatDate, formatCurrency, STATI_RIMBORSO } from '../lib/utils';
+import { RUOLI, formatDate, formatCurrency, STATI_RIMBORSO, hasAnyRole } from '../lib/utils';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const [recentRimborsi, setRecentRimborsi] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const canAccessRimborsi = ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const canAccessRimborsi = hasAnyRole(user, ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser']);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -91,7 +91,7 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-gray-900 font-['Manrope']">Benvenuto, {user?.nome}!</h1>
         <p className="text-gray-600 mt-1">
           {user?.sede_nome && <span>{user.sede_nome} • </span>}
-          {RUOLI[user?.ruolo] || user?.ruolo}
+          {(user?.ruoli || [user?.ruolo]).filter(Boolean).map(r => RUOLI[r] || r).join(' · ')}
         </p>
       </div>
 

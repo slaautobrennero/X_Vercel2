@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import {
   Phone, Mail, Globe, MessageCircle, Send,
@@ -55,7 +56,7 @@ export default function ContattiSidebar() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
 
-  const canEdit = ['admin', 'segretario', 'segreteria', 'superadmin'].includes(user?.ruolo);
+  const canEdit = hasAnyRole(user, ['admin', 'segretario', 'segreteria', 'superadmin']);
 
   const fetchContatti = useCallback(async () => {
     try {

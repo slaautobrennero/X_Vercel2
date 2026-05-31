@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { formatDateTime } from '../lib/utils';
+import { formatDateTime, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import { FileText, Plus, Download, Trash2, Upload, X, FolderOpen } from 'lucide-react';
 
@@ -16,7 +16,7 @@ export default function DocumentiPage() {
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canUpload = ['segreteria', 'segretario', 'admin', 'superadmin'].includes(user?.ruolo);
+  const canUpload = hasAnyRole(user, ['segreteria', 'segretario', 'admin', 'superadmin']);
 
   const categorie = [
     { value: 'modulistica', label: 'Modulistica' },

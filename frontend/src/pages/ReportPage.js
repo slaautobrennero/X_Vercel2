@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
 import { FileSpreadsheet, Download, BarChart3, FileText } from 'lucide-react';
 
@@ -16,7 +16,7 @@ export default function ReportPage() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  const isAllowed = ['admin', 'cassiere', 'superadmin', 'superuser'].includes(user?.ruolo);
+  const isAllowed = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']);
 
   useEffect(() => {
     if (isAllowed) {

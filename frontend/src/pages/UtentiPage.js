@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { RUOLI, formatDate } from '../lib/utils';
+import { RUOLI, RUOLO_BADGE_COLOR, formatDate, hasRole, hasAnyRole, getUserRoles } from '../lib/utils';
 import axios from 'axios';
 import { Users, Search, Shield, KeyRound, Copy, X, Check, Power, Trash2, AlertTriangle } from 'lucide-react';
 
@@ -12,6 +12,8 @@ export default function UtentiPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [editingRoles, setEditingRoles] = useState([]);  // ruoli selezionati nel modal
+  const [savingRoles, setSavingRoles] = useState(false);
   const [resetUser, setResetUser] = useState(null);
   const [resetResult, setResetResult] = useState(null);
   const [resetLoading, setResetLoading] = useState(false);
@@ -24,9 +26,9 @@ export default function UtentiPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const isSuperAdmin = user?.ruolo === 'superadmin';
-  const canResetPassword = ['admin', 'segretario', 'superadmin'].includes(user?.ruolo);
-  const canToggleDisabled = ['admin', 'segretario', 'superadmin'].includes(user?.ruolo);
+  const isSuperAdmin = hasRole(user, 'superadmin');
+  const canResetPassword = hasAnyRole(user, ['admin', 'segretario', 'superadmin']);
+  const canToggleDisabled = hasAnyRole(user, ['admin', 'segretario', 'superadmin']);
 
   useEffect(() => {
     fetchUsers();
@@ -43,16 +45,40 @@ export default function UtentiPage() {
     }
   };
 
-  const handleUpdateRole = async (userId, newRole) => {
+  const openRoleEditor = (u) => {
+    setSelectedUser(u);
+    setEditingRoles(getUserRoles(u));
+  };
+
+  const toggleEditingRole = (role) => {
+    setEditingRoles(prev => {
+      const has = prev.includes(role);
+      if (role === 'iscritto') {
+        // iscritto è esclusivo
+        return has ? [] : ['iscritto'];
+      }
+      // se sto aggiungendo un altro ruolo, rimuovo iscritto
+      const cleaned = prev.filter(r => r !== 'iscritto');
+      return has ? cleaned.filter(r => r !== role) : [...cleaned, role];
+    });
+  };
+
+  const handleSaveRoles = async () => {
+    if (!selectedUser || editingRoles.length === 0) {
+      alert('Seleziona almeno un ruolo');
+      return;
+    }
+    setSavingRoles(true);
     try {
-      const formData = new FormData();
-      formData.append('ruolo', newRole);
-      await axios.put(`${API}/users/${userId}/ruolo`, formData);
-      fetchUsers();
+      await axios.put(`${API}/users/${selectedUser.id}/ruolo`, { ruoli: editingRoles });
+      await fetchUsers();
       setSelectedUser(null);
+      setEditingRoles([]);
     } catch (error) {
-      console.error('Error updating role:', error);
+      console.error('Error updating roles:', error);
       alert(error.response?.data?.detail || 'Errore durante l\'aggiornamento');
+    } finally {
+      setSavingRoles(false);
     }
   };
 
@@ -199,31 +225,30 @@ export default function UtentiPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        u.ruolo === 'superadmin' ? 'bg-purple-100 text-purple-800' :
-                        u.ruolo === 'admin' ? 'bg-blue-100 text-blue-800' :
-                        u.ruolo === 'cassiere' ? 'bg-emerald-100 text-emerald-800' :
-                        u.ruolo === 'segretario' ? 'bg-indigo-100 text-indigo-800' :
-                        u.ruolo === 'segreteria' ? 'bg-cyan-100 text-cyan-800' :
-                        u.ruolo === 'delegato' ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {RUOLI[u.ruolo] || u.ruolo}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {(u.ruoli || [u.ruolo]).filter(Boolean).map(r => (
+                          <span
+                            key={r}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${RUOLO_BADGE_COLOR[r] || 'bg-gray-100 text-gray-800'}`}
+                          >
+                            {RUOLI[r] || r}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{u.sede_nome || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{formatDate(u.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => setSelectedUser(u)}
+                          onClick={() => openRoleEditor(u)}
                           className="p-2 text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"
-                          title="Modifica ruolo"
+                          title="Modifica ruoli"
                           data-testid={`edit-user-${u.id}`}
                         >
                           <Shield size={18} />
                         </button>
-                        {canResetPassword && !['superadmin', 'superuser'].includes(u.ruolo) && u.id !== user?.id && (
+                        {canResetPassword && !((u.ruoli || [u.ruolo]).some(r => ['superadmin', 'superuser'].includes(r))) && u.id !== user?.id && (
                           <button
                             onClick={() => setResetUser(u)}
                             className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
@@ -233,7 +258,7 @@ export default function UtentiPage() {
                             <KeyRound size={18} />
                           </button>
                         )}
-                        {canToggleDisabled && !['superadmin', 'superuser'].includes(u.ruolo) && u.id !== user?.id && (
+                        {canToggleDisabled && !((u.ruoli || [u.ruolo]).some(r => ['superadmin', 'superuser'].includes(r))) && u.id !== user?.id && (
                           <button
                             onClick={() => setToggleUser(u)}
                             className={`p-2 rounded-md transition-colors ${
@@ -267,41 +292,82 @@ export default function UtentiPage() {
         </div>
       )}
 
-      {/* Role Edit Modal */}
+      {/* Role Edit Modal - MULTI-RUOLO */}
       {selectedUser && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Modifica Ruolo</h2>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Modifica Ruoli</h2>
+              <button
+                onClick={() => { setSelectedUser(null); setEditingRoles([]); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
             </div>
             <div className="p-6">
-              <p className="text-gray-600 mb-4">
-                {selectedUser.nome} {selectedUser.cognome} ({selectedUser.email})
+              <p className="text-gray-600 mb-1">
+                {selectedUser.nome} {selectedUser.cognome}
               </p>
+              <p className="text-sm text-gray-500 mb-4">{selectedUser.email}</p>
+
+              <p className="text-xs text-gray-500 mb-3">
+                Seleziona uno o più ruoli. <strong>"Iscritto"</strong> non può essere combinato con altri ruoli.
+              </p>
+
               <div className="space-y-2">
-                {Object.entries(RUOLI).filter(([key]) => 
+                {Object.entries(RUOLI).filter(([key]) =>
                   isSuperAdmin || !['superadmin', 'superuser'].includes(key)
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => handleUpdateRole(selectedUser.id, key)}
-                    className={`w-full text-left px-4 py-3 rounded-md border transition-colors ${
-                      selectedUser.ruolo === key 
-                        ? 'border-[#1E4D8C] bg-blue-50 text-[#1E4D8C]' 
-                        : 'border-gray-200 hover:border-[#1E4D8C] hover:bg-blue-50'
-                    }`}
-                    data-testid={`role-option-${key}`}
-                  >
-                    {label}
-                  </button>
-                ))}
+                ).map(([key, label]) => {
+                  const checked = editingRoles.includes(key);
+                  const disabled =
+                    (key !== 'iscritto' && editingRoles.includes('iscritto')) ||
+                    (key === 'iscritto' && editingRoles.length > 0 && !editingRoles.includes('iscritto'));
+                  return (
+                    <label
+                      key={key}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-md border transition-colors cursor-pointer ${
+                        checked
+                          ? 'border-[#1E4D8C] bg-blue-50'
+                          : disabled
+                            ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                            : 'border-gray-200 hover:border-[#1E4D8C] hover:bg-blue-50'
+                      }`}
+                      data-testid={`role-option-${key}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => toggleEditingRole(key)}
+                        className="w-4 h-4 rounded border-gray-300 text-[#1E4D8C] focus:ring-[#1E4D8C]"
+                        data-testid={`role-checkbox-${key}`}
+                      />
+                      <span className={`flex-1 text-sm font-medium ${RUOLO_BADGE_COLOR[key] || 'text-gray-700'} bg-transparent`}>
+                        {label}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
-              <button
-                onClick={() => setSelectedUser(null)}
-                className="w-full mt-4 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                Chiudi
-              </button>
+
+              <div className="flex gap-2 mt-6">
+                <button
+                  onClick={() => { setSelectedUser(null); setEditingRoles([]); }}
+                  className="flex-1 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                  data-testid="cancel-roles-btn"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleSaveRoles}
+                  disabled={savingRoles || editingRoles.length === 0}
+                  className="flex-1 px-4 py-2 bg-[#1E4D8C] text-white rounded-md hover:bg-[#1A4378] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="save-roles-btn"
+                >
+                  {savingRoles ? 'Salvataggio...' : 'Salva ruoli'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
