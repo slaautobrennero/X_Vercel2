@@ -50,6 +50,7 @@ import io
 import csv
 import uuid
 import math
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
@@ -530,6 +531,185 @@ async def _notify_all_in_sede(sede_id: Optional[str], notifica_data: dict, exclu
         })
     if notifiche_to_insert:
         await db.notifiche.insert_many(notifiche_to_insert)
+
+
+
+# ==================== SCHEDULER: PROMEMORIA RIMBORSI PENDENTI >7gg ====================
+
+async def _check_pending_reimbursements() -> dict:
+    """
+    Controlla rimborsi pendenti da >=7 giorni.
+    Per ogni cassiere, invia DUE notifiche distinte:
+      - "in_attesa": rimborsi DA APPROVARE fermi >=7gg
+      - "approvato": rimborsi DA PAGARE fermi >=7gg dall'approvazione
+    
+    Ricorrenza: settimanale → notifica scatta a giorni 7, 14, 21, ... dalla creazione.
+    Anti-spam: usa il marcatore `reminder_last_sent_*` sul rimborso e su `reminder_keys`
+    nella notifica così non rinotifica nella stessa "settimana di pendenza".
+    """
+    now = datetime.now(timezone.utc)
+    soglia_giorni = 7
+    risultato = {"in_attesa_inviate": 0, "approvato_inviate": 0, "cassieri_notificati": 0}
+    
+    # Recupera tutti i rimborsi non chiusi
+    pending = await db.rimborsi.find({
+        "stato": {"$in": ["in_attesa", "approvato"]}
+    }).to_list(length=None)
+    
+    if not pending:
+        return risultato
+    
+    # Raggruppa per sede_id → due liste (da_approvare, da_pagare)
+    sedi_buckets: dict = {}
+    for r in pending:
+        sede_id = r.get("sede_id")
+        if sede_id not in sedi_buckets:
+            sedi_buckets[sede_id] = {"da_approvare": [], "da_pagare": []}
+        
+        if r.get("stato") == "in_attesa":
+            # Conta da created_at
+            created_str = r.get("created_at")
+            if not created_str:
+                continue
+            try:
+                created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            giorni = (now - created_dt).days
+            if giorni >= soglia_giorni:
+                # Settimana di pendenza corrente (1 = 7-13gg, 2 = 14-20gg, ...)
+                settimana = giorni // soglia_giorni
+                last_week = r.get("reminder_last_week_attesa", 0)
+                if settimana > last_week:
+                    sedi_buckets[sede_id]["da_approvare"].append({"rimborso": r, "giorni": giorni, "settimana": settimana})
+        
+        elif r.get("stato") == "approvato":
+            # Conta da approvato_at (fallback: created_at)
+            approvato_str = r.get("approvato_at") or r.get("created_at")
+            if not approvato_str:
+                continue
+            try:
+                approvato_dt = datetime.fromisoformat(approvato_str.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            giorni = (now - approvato_dt).days
+            if giorni >= soglia_giorni:
+                settimana = giorni // soglia_giorni
+                last_week = r.get("reminder_last_week_pagamento", 0)
+                if settimana > last_week:
+                    sedi_buckets[sede_id]["da_pagare"].append({"rimborso": r, "giorni": giorni, "settimana": settimana})
+    
+    # Per ogni sede, recupera i cassieri e invia notifiche aggregate
+    cassieri_notificati_ids = set()
+    for sede_id, buckets in sedi_buckets.items():
+        da_approvare = buckets["da_approvare"]
+        da_pagare = buckets["da_pagare"]
+        
+        if not da_approvare and not da_pagare:
+            continue
+        
+        # Trova i cassieri della sede (anche multi-ruolo)
+        role_match = {"$or": [{"ruolo": "cassiere"}, {"ruoli": "cassiere"}]}
+        if sede_id:
+            cassieri_query = {"$and": [role_match, {"sede_id": sede_id}, {"disabled": {"$ne": True}}]}
+        else:
+            cassieri_query = {"$and": [role_match, {"disabled": {"$ne": True}}]}
+        
+        cassieri = await db.users.find(cassieri_query, {"_id": 1}).to_list(length=None)
+        if not cassieri:
+            continue
+        
+        # Notifica DA APPROVARE
+        if da_approvare:
+            count = len(da_approvare)
+            messaggio = f"{count} rimborso/i in attesa di approvazione da almeno 7 giorni"
+            notifiche = [{
+                "user_id": str(c["_id"]),
+                "tipo": "promemoria_rimborsi",
+                "titolo": "Rimborsi da approvare",
+                "messaggio": messaggio,
+                "rimborsi_count": count,
+                "stato_filtro": "in_attesa",
+                "letto": False,
+                "created_at": now.isoformat(),
+            } for c in cassieri]
+            await db.notifiche.insert_many(notifiche)
+            risultato["in_attesa_inviate"] += len(notifiche)
+            # Marca i rimborsi come "notificati" per questa settimana
+            for item in da_approvare:
+                await db.rimborsi.update_one(
+                    {"_id": item["rimborso"]["_id"]},
+                    {"$set": {"reminder_last_week_attesa": item["settimana"]}}
+                )
+            for c in cassieri:
+                cassieri_notificati_ids.add(str(c["_id"]))
+        
+        # Notifica DA PAGARE
+        if da_pagare:
+            count = len(da_pagare)
+            messaggio = f"{count} rimborso/i approvato/i in attesa di pagamento da almeno 7 giorni"
+            notifiche = [{
+                "user_id": str(c["_id"]),
+                "tipo": "promemoria_rimborsi",
+                "titolo": "Rimborsi da pagare",
+                "messaggio": messaggio,
+                "rimborsi_count": count,
+                "stato_filtro": "approvato",
+                "letto": False,
+                "created_at": now.isoformat(),
+            } for c in cassieri]
+            await db.notifiche.insert_many(notifiche)
+            risultato["approvato_inviate"] += len(notifiche)
+            for item in da_pagare:
+                await db.rimborsi.update_one(
+                    {"_id": item["rimborso"]["_id"]},
+                    {"$set": {"reminder_last_week_pagamento": item["settimana"]}}
+                )
+            for c in cassieri:
+                cassieri_notificati_ids.add(str(c["_id"]))
+    
+    risultato["cassieri_notificati"] = len(cassieri_notificati_ids)
+    return risultato
+
+
+async def _pending_reimbursements_scheduler():
+    """
+    Loop infinito: ogni 60 minuti controlla se è ora di lanciare il check.
+    Il check parte alle 08:00 (ora locale Europe/Rome ~ UTC+1/+2) → uso semplicemente l'ora UTC 07:00.
+    Resiste a riavvii: lo stato è in DB (collection `system_jobs`).
+    """
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Esegui se sono almeno le 07:00 UTC e non già fatto oggi
+            if now.hour >= 7:
+                job_doc = await db.system_jobs.find_one({"_id": "pending_reimbursements"})
+                last_run_str = job_doc.get("last_run") if job_doc else None
+                last_run_date = None
+                if last_run_str:
+                    try:
+                        last_run_date = datetime.fromisoformat(last_run_str).date()
+                    except Exception:
+                        last_run_date = None
+                
+                if last_run_date != now.date():
+                    logger.info("Scheduler: avvio check rimborsi pendenti >7gg")
+                    try:
+                        result = await _check_pending_reimbursements()
+                        logger.info(f"Scheduler: completato - {result}")
+                    except Exception as e:
+                        logger.error(f"Scheduler errore: {e}")
+                    
+                    await db.system_jobs.update_one(
+                        {"_id": "pending_reimbursements"},
+                        {"$set": {"last_run": now.isoformat()}},
+                        upsert=True
+                    )
+        except Exception as e:
+            logger.error(f"Scheduler loop errore: {e}")
+        
+        # Aspetta 1 ora prima del prossimo check
+        await asyncio.sleep(3600)
 
 
 
@@ -1164,11 +1344,23 @@ async def delete_motivo_rimborso(motivo_id: str, request: Request):
 # ==================== RIMBORSI ROUTES ====================
 
 @api_router.get("/rimborsi")
-async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Optional[int] = None):
+async def get_rimborsi(
+    request: Request,
+    stato: Optional[str] = None,
+    anno: Optional[int] = None,
+    data_da: Optional[str] = None,        # YYYY-MM-DD
+    data_a: Optional[str] = None,         # YYYY-MM-DD
+    user_id: Optional[str] = None,        # filtro per autore
+    sede_id: Optional[str] = None,        # filtro per sede (solo super*)
+    motivo_id: Optional[str] = None,      # filtro per motivo
+    importo_min: Optional[float] = None,  # range importo
+    importo_max: Optional[float] = None,
+):
     user = await get_current_user(request)
     
-    query = {}
+    query: dict = {}
     
+    # Scope: superadmin/superuser → tutti; admin/cassiere → sede; altri → solo i propri
     if not user_has_any_role(user, ["superadmin", "superuser"]):
         if user_has_any_role(user, ["admin", "cassiere"]):
             query["sede_id"] = user.get("sede_id")
@@ -1178,8 +1370,36 @@ async def get_rimborsi(request: Request, stato: Optional[str] = None, anno: Opti
     if stato:
         query["stato"] = stato
     
-    if anno:
+    # Filtro per anno (legacy) o range date
+    if data_da or data_a:
+        date_range: dict = {}
+        if data_da:
+            date_range["$gte"] = data_da
+        if data_a:
+            date_range["$lte"] = data_a
+        query["data"] = date_range
+    elif anno:
         query["data"] = {"$regex": f"^{anno}"}
+    
+    # Filtro per autore (solo per chi può vedere multi-utente)
+    if user_id and user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
+        query["user_id"] = user_id
+    
+    # Filtro sede - solo super* può filtrare diverse sedi
+    if sede_id and user_has_any_role(user, ["superadmin", "superuser"]):
+        query["sede_id"] = sede_id
+    
+    if motivo_id:
+        query["motivo_id"] = motivo_id
+    
+    # Range importo
+    if importo_min is not None or importo_max is not None:
+        importo_range: dict = {}
+        if importo_min is not None:
+            importo_range["$gte"] = importo_min
+        if importo_max is not None:
+            importo_range["$lte"] = importo_max
+        query["importo_totale"] = importo_range
     
     rimborsi = []
     async for rimborso in db.rimborsi.find(query).sort("created_at", -1):
@@ -2148,6 +2368,17 @@ async def update_user_role(user_id: str, request: Request, payload: UpdateRuoliR
     
     return {"message": "Ruoli aggiornati", "ruoli": nuovi_ruoli}
 
+@api_router.post("/system/check-pending-reimbursements")
+async def trigger_pending_check(request: Request):
+    """Lancia manualmente il check rimborsi pendenti >7gg (solo superadmin/admin).
+    Utile per testing e debug. In produzione lo scheduler automatico gira ogni notte."""
+    user = await get_current_user(request)
+    if not user_has_any_role(user, ["superadmin", "admin"]):
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    result = await _check_pending_reimbursements()
+    return result
+
+
 # ==================== REPORTS ====================
 
 @api_router.get("/reports/rimborsi-annuali")
@@ -2472,6 +2703,12 @@ async def startup():
 """)
     
     logger.info("Database inizializzato")
+    
+    # === SCHEDULER PROMEMORIA RIMBORSI PENDENTI >7gg ===
+    # Lancia il task in background che ogni notte alle 08:00 controlla
+    # i rimborsi in_attesa / approvato fermi da >=7 giorni e notifica i cassieri.
+    asyncio.create_task(_pending_reimbursements_scheduler())
+    logger.info("Scheduler promemoria rimborsi avviato")
 
 @app.on_event("shutdown")
 async def shutdown():

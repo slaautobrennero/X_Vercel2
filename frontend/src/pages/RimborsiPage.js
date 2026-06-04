@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatCurrency, STATI_RIMBORSO, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
-import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText, History } from 'lucide-react';
+import { Receipt, Plus, X, Upload, Eye, Check, XCircle, CreditCard, MapPin, AlertTriangle, FileText, History, Filter } from 'lucide-react';
 import { RimborsoHistoryModal } from './AuditLogPage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -11,10 +11,19 @@ export default function RimborsiPage() {
   const { user } = useAuth();
   const [rimborsi, setRimborsi] = useState([]);
   const [motivi, setMotivi] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(null);
+  const [showFiltersPanel, setShowFiltersPanel] = useState(false);
   const [selectedStato, setSelectedStato] = useState('');
+  // Filtri avanzati
+  const [filtroDataDa, setFiltroDataDa] = useState('');
+  const [filtroDataA, setFiltroDataA] = useState('');
+  const [filtroUserId, setFiltroUserId] = useState('');
+  const [filtroMotivoId, setFiltroMotivoId] = useState('');
+  const [filtroImportoMin, setFiltroImportoMin] = useState('');
+  const [filtroImportoMax, setFiltroImportoMax] = useState('');
   const [formData, setFormData] = useState({
     data: new Date().toISOString().split('T')[0],
     motivo_id: '',
@@ -40,12 +49,30 @@ export default function RimborsiPage() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedStato]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStato, filtroDataDa, filtroDataA, filtroUserId, filtroMotivoId, filtroImportoMin, filtroImportoMax]);
+
+  // Carica lista utenti per il filtro autore (solo per chi può vedere multi-utente)
+  useEffect(() => {
+    if (isAdmin) {
+      axios.get(`${API}/users`).then(r => setUsers(r.data || [])).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = async () => {
     try {
+      const params = new URLSearchParams();
+      if (selectedStato) params.set('stato', selectedStato);
+      if (filtroDataDa) params.set('data_da', filtroDataDa);
+      if (filtroDataA) params.set('data_a', filtroDataA);
+      if (filtroUserId) params.set('user_id', filtroUserId);
+      if (filtroMotivoId) params.set('motivo_id', filtroMotivoId);
+      if (filtroImportoMin !== '') params.set('importo_min', filtroImportoMin);
+      if (filtroImportoMax !== '') params.set('importo_max', filtroImportoMax);
+      const q = params.toString();
       const [rimborsiRes, motiviRes] = await Promise.all([
-        axios.get(`${API}/rimborsi${selectedStato ? `?stato=${selectedStato}` : ''}`),
+        axios.get(`${API}/rimborsi${q ? `?${q}` : ''}`),
         axios.get(`${API}/motivi-rimborso`)
       ]);
       setRimborsi(rimborsiRes.data);
@@ -56,6 +83,18 @@ export default function RimborsiPage() {
       setLoading(false);
     }
   };
+
+  const resetAllFilters = () => {
+    setSelectedStato('');
+    setFiltroDataDa('');
+    setFiltroDataA('');
+    setFiltroUserId('');
+    setFiltroMotivoId('');
+    setFiltroImportoMin('');
+    setFiltroImportoMax('');
+  };
+
+  const activeFiltersCount = [selectedStato, filtroDataDa, filtroDataA, filtroUserId, filtroMotivoId, filtroImportoMin, filtroImportoMax].filter(v => v !== '' && v !== null).length;
 
   const handleMotivoChange = (motivoId) => {
     const motivo = motivi.find(m => m.id === motivoId);
@@ -220,28 +259,143 @@ export default function RimborsiPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setSelectedStato('')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            selectedStato === '' ? 'bg-[#1E4D8C] text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-          }`}
-          data-testid="filter-all"
-        >
-          Tutti
-        </button>
-        {Object.entries(STATI_RIMBORSO).map(([key, { label }]) => (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            key={key}
-            onClick={() => setSelectedStato(key)}
+            onClick={() => setSelectedStato('')}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              selectedStato === key ? 'bg-[#1E4D8C] text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              selectedStato === '' ? 'bg-[#1E4D8C] text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
-            data-testid={`filter-${key}`}
+            data-testid="filter-all"
           >
-            {label}
+            Tutti
           </button>
-        ))}
+          {Object.entries(STATI_RIMBORSO).map(([key, { label }]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedStato(key)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                selectedStato === key ? 'bg-[#1E4D8C] text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+              data-testid={`filter-${key}`}
+            >
+              {label}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setShowFiltersPanel(!showFiltersPanel)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                showFiltersPanel || activeFiltersCount > 0
+                  ? 'bg-[#1E4D8C] text-white'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+              data-testid="toggle-advanced-filters"
+            >
+              <Filter size={16} />
+              Filtri avanzati
+              {activeFiltersCount > 0 && (
+                <span className="bg-white text-[#1E4D8C] text-xs font-bold px-2 py-0.5 rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={resetAllFilters}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-red-600 transition-colors"
+                data-testid="reset-filters"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showFiltersPanel && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="advanced-filters-panel">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Data dal</label>
+              <input
+                type="date"
+                value={filtroDataDa}
+                onChange={e => setFiltroDataDa(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                data-testid="filter-data-da"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Data al</label>
+              <input
+                type="date"
+                value={filtroDataA}
+                onChange={e => setFiltroDataA(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                data-testid="filter-data-a"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Motivo</label>
+              <select
+                value={filtroMotivoId}
+                onChange={e => setFiltroMotivoId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                data-testid="filter-motivo"
+              >
+                <option value="">Tutti</option>
+                {motivi.map(m => (
+                  <option key={m.id} value={m.id}>{m.nome}</option>
+                ))}
+              </select>
+            </div>
+            {isAdmin && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Richiedente</label>
+                <select
+                  value={filtroUserId}
+                  onChange={e => setFiltroUserId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                  data-testid="filter-user"
+                >
+                  <option value="">Tutti</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.nome} {u.cognome} ({u.email})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Importo min (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={filtroImportoMin}
+                onChange={e => setFiltroImportoMin(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                data-testid="filter-importo-min"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Importo max (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={filtroImportoMax}
+                onChange={e => setFiltroImportoMax(e.target.value)}
+                placeholder="999.99"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-[#1E4D8C] focus:border-transparent"
+                data-testid="filter-importo-max"
+              />
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500">
+          {rimborsi.length} rimborsi {activeFiltersCount > 0 ? 'filtrati' : 'totali'}
+        </p>
       </div>
 
       {/* Rimborsi Table */}
