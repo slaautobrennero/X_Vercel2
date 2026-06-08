@@ -68,6 +68,25 @@ Admin/Cassiere paga diretto (con contabile) → "pagato" (VERDE)
 - `UtentiPage`: checkbox multipli con vincolo "iscritto esclusivo"
 - Lista utenti / Profilo / Dashboard: visualizza tutti i ruoli come pillole separate
 
+## Architettura backend (refactoring 08/06/2026)
+```
+backend/
+├── server.py          (~2050 righe — routes + startup)
+├── models_api.py      Pydantic models (User, Sede, Rimborso, ...)
+├── core/
+│   ├── config.py      env, paths, logger, CORS regex
+│   ├── db.py          connessione MongoDB
+│   ├── auth.py        JWT, password, get_current_user
+│   ├── roles.py       multi-ruolo (helper, validazione)
+│   ├── notifications.py  _notify_users_by_role/_user/_all_in_sede
+│   ├── audit.py       _log_audit
+│   └── scheduler.py   promemoria rimborsi >7gg (loop async)
+├── routes/            (vuota, pronta per estrazione successiva)
+└── server.py.bak      backup pre-refactoring
+```
+Le route HTTP sono ancora dentro `server.py` (estrazione completa pianificata in step successivo).
+Tutti gli endpoint funzionano identici a prima (verified via curl).
+
 ## Backlog prossime sessioni
 - 🟠 P1: Filtri avanzati rimborsi (date range, stato, utente, importo)
 - 🟠 P1: Promemoria rimborsi pendenti >7gg (notifiche admin/cassieri)
