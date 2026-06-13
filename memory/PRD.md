@@ -87,6 +87,15 @@ backend/
 Le route HTTP sono ancora dentro `server.py` (estrazione completa pianificata in step successivo).
 Tutti gli endpoint funzionano identici a prima (verified via curl).
 
+## Sicurezza (10/06/2026)
+- **MongoDB con autenticazione** username/password (configurato via `docker/.env`)
+- **Security headers HTTP** (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+- **2FA TOTP** opzionale per admin/superadmin (compatibile Google Authenticator/Authy/1Password)
+- **Backup MongoDB cifrati AES-256** (già esistente)
+- **Rate limit login** 5 tentativi → lockout 15 min (già esistente)
+- **JWT in cookie httpOnly + Secure + SameSite=None** (già esistente)
+- **bcrypt** per password (già esistente)
+
 ## Backlog prossime sessioni
 - 🟠 P1: Filtri avanzati rimborsi (date range, stato, utente, importo)
 - 🟠 P1: Promemoria rimborsi pendenti >7gg (notifiche admin/cassieri)

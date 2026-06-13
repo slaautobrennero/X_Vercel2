@@ -55,6 +55,7 @@ class UserResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    totp_code: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -68,6 +69,16 @@ class ToggleDisableRequest(BaseModel):
 
 class UpdateRuoliRequest(BaseModel):
     ruoli: List[str]
+
+
+# --- 2FA TOTP ---
+
+class TOTPEnableRequest(BaseModel):
+    code: str
+
+
+class TOTPDisableRequest(BaseModel):
+    password: str
 
 
 # --- SEDE ---

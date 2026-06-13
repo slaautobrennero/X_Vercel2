@@ -26,8 +26,10 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, [checkAuth]);
 
-  const login = async (email, password) => {
-    const response = await axios.post(`${API}/auth/login`, { email, password });
+  const login = async (email, password, totpCode) => {
+    const payload = { email, password };
+    if (totpCode) payload.totp_code = totpCode;
+    const response = await axios.post(`${API}/auth/login`, payload);
     setUser(response.data);
     return response.data;
   };

@@ -36,11 +36,11 @@ services:
     volumes:
       - mongodb_data:/data/db
     environment:
-      # Rimuovi queste righe se non vuoi autenticazione
-      # MONGO_INITDB_ROOT_USERNAME: admin
-      # MONGO_INITDB_ROOT_PASSWORD: password_sicura
-    ports:
-      - "27017:27017"  # Rimuovi in produzione per sicurezza
+      # Autenticazione MongoDB (impostata al primo avvio del container).
+      # Le credenziali stanno in docker/.env (MONGO_ROOT_USERNAME / MONGO_ROOT_PASSWORD).
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD obbligatorio in docker/.env}
+    # Porta 27017 NON esposta: il DB è raggiungibile solo dalla rete Docker interna
     networks:
       - sla-network
 
@@ -56,8 +56,8 @@ services:
     depends_on:
       - mongodb
     environment:
-      # Database
-      MONGO_URL: mongodb://mongodb:27017
+      # Database (con autenticazione)
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
       DB_NAME: sla_sindacato
       
       # JWT - CAMBIA IN PRODUZIONE!

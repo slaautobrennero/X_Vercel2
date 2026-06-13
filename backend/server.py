@@ -77,6 +77,7 @@ from core.scheduler import (
 from models_api import (
     UserBase, UserCreate, UserUpdate, UserResponse, LoginRequest,
     ChangePasswordRequest, ToggleDisableRequest, UpdateRuoliRequest,
+    TOTPEnableRequest, TOTPDisableRequest,
     SedeCreate, SedeUpdate,
     MotivoRimborsoCreate, MotivoRimborsoUpdate,
     RimborsoCreate, RimborsoUpdate,
@@ -196,6 +197,21 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
     if user.get("disabled", False):
         raise HTTPException(status_code=403, detail="Account disattivato. Contatta l'amministratore.")
     
+    # === 2FA TOTP (Two-Factor Authentication) ===
+    # Se l'utente ha 2FA attivo, richiedi il codice prima di completare il login.
+    if user.get("totp_enabled"):
+        from core.totp import verify_code
+        if not login_data.totp_code:
+            # 2FA richiesto ma non fornito → il client deve mostrare campo "Codice 2FA"
+            raise HTTPException(status_code=401, detail="2FA_REQUIRED")
+        if not verify_code(user.get("totp_secret", ""), login_data.totp_code):
+            await db.login_attempts.update_one(
+                {"identifier": identifier},
+                {"$inc": {"count": 1}, "$set": {"last_attempt": datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
+            raise HTTPException(status_code=401, detail="Codice 2FA non valido")
+    
     await db.login_attempts.delete_one({"identifier": identifier})
     
     user_id = str(user["_id"])
@@ -218,6 +234,7 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
         "ruolo": user["ruolo"],
         "ruoli": user.get("ruoli") or [user["ruolo"]],
         "sede_id": user.get("sede_id"),
+        "totp_enabled": bool(user.get("totp_enabled")),
         "created_at": user["created_at"]
     }
     
@@ -237,7 +254,112 @@ async def logout(response: Response):
 @api_router.get("/auth/me")
 async def get_me(request: Request):
     user = await get_current_user(request)
+    # Espone solo lo stato 2FA, non il segreto
+    user["totp_enabled"] = bool(user.get("totp_enabled"))
+    user.pop("totp_secret", None)
     return user
+
+
+# ==================== 2FA TOTP ENDPOINTS ====================
+# Disponibile solo per ruoli sensibili (admin, superadmin).
+# Gli iscritti/delegati non hanno 2FA (UX semplice per l'utenza ampia).
+
+def _2fa_allowed(user: dict) -> bool:
+    return user_has_any_role(user, ["admin", "superadmin"])
+
+
+@api_router.post("/auth/2fa/setup")
+async def setup_2fa(request: Request):
+    """
+    Inizia la configurazione 2FA: genera segreto + QR code.
+    Il segreto viene salvato come 'pending' finché non viene verificato il primo codice.
+    """
+    from core.totp import generate_secret, generate_qrcode_png
+    user = await get_current_user(request)
+    if not _2fa_allowed(user):
+        raise HTTPException(status_code=403, detail="2FA disponibile solo per admin/superadmin")
+    if user.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA già attivo. Disabilitalo prima di riconfigurarlo.")
+    
+    secret = generate_secret()
+    qr = generate_qrcode_png(secret, user["email"])
+    
+    # Salva il segreto come "pending" (NON ancora abilitato)
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$set": {"totp_secret_pending": secret}}
+    )
+    
+    return {
+        "secret": secret,  # Solo per debug/manual entry sull'app authenticator
+        "qrcode": qr,
+        "issuer": "Portale SLA",
+        "account": user["email"],
+    }
+
+
+@api_router.post("/auth/2fa/enable")
+async def enable_2fa(payload: TOTPEnableRequest, request: Request):
+    """
+    Verifica il primo codice e attiva definitivamente il 2FA.
+    """
+    from core.totp import verify_code
+    user = await get_current_user(request)
+    if not _2fa_allowed(user):
+        raise HTTPException(status_code=403, detail="2FA disponibile solo per admin/superadmin")
+    
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    pending = user_doc.get("totp_secret_pending")
+    if not pending:
+        raise HTTPException(status_code=400, detail="Nessuna configurazione 2FA in corso. Riavvia da Setup.")
+    
+    if not verify_code(pending, payload.code):
+        raise HTTPException(status_code=400, detail="Codice non valido")
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {
+            "$set": {"totp_secret": pending, "totp_enabled": True},
+            "$unset": {"totp_secret_pending": ""}
+        }
+    )
+    await _log_audit(
+        actor=user,
+        action="user.enable_2fa",
+        target_type="user",
+        target_id=user["id"],
+        target_label=user["email"],
+    )
+    return {"message": "2FA attivato con successo", "totp_enabled": True}
+
+
+@api_router.post("/auth/2fa/disable")
+async def disable_2fa(payload: TOTPDisableRequest, request: Request):
+    """
+    Disabilita 2FA. Richiede la password per evitare disabilitazioni accidentali
+    (es. se qualcuno ti ruba il cookie e non sa la password, non può togliere 2FA).
+    """
+    user = await get_current_user(request)
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    
+    if not verify_password(payload.password, user_doc["password_hash"]):
+        raise HTTPException(status_code=401, detail="Password non valida")
+    
+    if not user_doc.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA non è attivo")
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$unset": {"totp_secret": "", "totp_enabled": "", "totp_secret_pending": ""}}
+    )
+    await _log_audit(
+        actor=user,
+        action="user.disable_2fa",
+        target_type="user",
+        target_id=user["id"],
+        target_label=user["email"],
+    )
+    return {"message": "2FA disattivato", "totp_enabled": False}
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request, response: Response):
@@ -2044,12 +2166,43 @@ async def shutdown():
 
 app.include_router(api_router)
 
+# ==================== SECURITY HEADERS MIDDLEWARE ====================
+# Aggiunge header HTTP standard per protezione contro XSS, clickjacking,
+# MIME sniffing, downgrade HTTPS. Si applicano a TUTTE le risposte.
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    # HSTS: forza HTTPS per 1 anno (browser ricordano e bloccano HTTP)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Impedisce embed in iframe → anti-clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+    # Impedisce MIME-sniffing → riduce rischio XSS via upload
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Limita info inviate ad altri siti via referer
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Disabilita feature browser non usate (camera, microfono, geo, ecc.)
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+    # CSP: limita le origini di script/style/img consentite
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com; "
+        "connect-src 'self' https://maps.googleapis.com; "
+        "frame-ancestors 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self'"
+    )
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=os.environ.get(
-        "FRONTEND_ORIGIN_REGEX",
-        r"https?://(www\.)?(portale-sla\.it|localhost(:\d+)?|192\.168\.\d+\.\d+(:\d+)?)"
-    ),
+    allow_origin_regex=FRONTEND_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

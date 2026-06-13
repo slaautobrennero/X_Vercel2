@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { formatApiErrorDetail } from '../lib/utils';
-import { Eye, EyeOff, LogIn } from 'lucide-react';
+import { Eye, EyeOff, LogIn, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [requires2FA, setRequires2FA] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,10 +21,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(email, password, requires2FA ? totpCode : undefined);
       navigate('/');
     } catch (err) {
-      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+      const detail = err.response?.data?.detail;
+      if (detail === '2FA_REQUIRED') {
+        // Server ci dice che serve il codice 2FA
+        setRequires2FA(true);
+        setError('');
+      } else {
+        setError(formatApiErrorDetail(detail) || err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -91,9 +100,37 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {requires2FA && (
+              <div>
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md flex items-start gap-2">
+                  <ShieldCheck className="text-[#1E4D8C] flex-shrink-0 mt-0.5" size={18} />
+                  <p className="text-sm text-gray-700">
+                    Inserisci il codice a 6 cifre dell&apos;app autenticatore (Google Authenticator, Authy, ecc.)
+                  </p>
+                </div>
+                <label htmlFor="totp" className="block text-sm font-medium text-gray-700 mb-1">
+                  Codice 2FA
+                </label>
+                <input
+                  id="totp"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  required
+                  autoFocus
+                  className="w-full border border-gray-300 rounded-md shadow-sm px-4 py-2.5 text-center text-2xl font-mono tracking-widest focus:border-[#1E4D8C] focus:ring-[#1E4D8C] focus:ring-1 outline-none transition-colors"
+                  placeholder="000000"
+                  data-testid="login-totp-input"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (requires2FA && totpCode.length !== 6)}
               className="w-full bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-4 py-2.5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="login-submit-btn"
             >
@@ -102,7 +139,7 @@ export default function LoginPage() {
               ) : (
                 <>
                   <LogIn size={18} />
-                  <span>Accedi</span>
+                  <span>{requires2FA ? 'Verifica codice' : 'Accedi'}</span>
                 </>
               )}
             </button>

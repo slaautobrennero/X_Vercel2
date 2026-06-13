@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { RUOLI, RUOLO_BADGE_COLOR } from '../lib/utils';
+import { RUOLI, RUOLO_BADGE_COLOR, hasAnyRole } from '../lib/utils';
+import TwoFactorSection from '../components/TwoFactorSection';
 import axios from 'axios';
 import { User, Mail, Phone, MapPin, CreditCard, Save, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -343,6 +344,11 @@ export default function ProfiloPage() {
           </div>
         </form>
       </div>
+
+      {/* 2FA Section - solo per admin/superadmin */}
+      {hasAnyRole(user, ['admin', 'superadmin']) && (
+        <TwoFactorSection user={user} onUpdate={updateUser} />
+      )}
     </div>
   );
 }
