@@ -30,7 +30,7 @@ services:
   #   - armv7l = 32-bit (usa mongo:4.4)
   # ==========================================
   mongodb:
-    image: mongo:6.0  # Cambia in mongo:4.4 se Raspberry Pi 32-bit
+    image: mongo:4.4.18  # ARM64 + dati esistenti del Pi sono Mongo 4.4
     container_name: sla-mongodb
     restart: unless-stopped
     volumes:
@@ -62,6 +62,10 @@ services:
       
       # JWT - CAMBIA IN PRODUZIONE!
       JWT_SECRET: ${JWT_SECRET:-genera-una-chiave-segreta-lunga-almeno-32-caratteri}
+      
+      # Admin iniziale (solo al primo avvio se non esiste già)
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-superadmin@sla.it}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-CambiaQuestaPassword!}
       
       # Google Maps (opzionale)
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
