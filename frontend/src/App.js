@@ -54,6 +54,9 @@ import ReportPage from './pages/ReportPage';
 // Layout - Layout principale con sidebar
 import MainLayout from './layouts/MainLayout';
 
+// Badge versione (sempre visibile)
+import VersionBadge from './components/VersionBadge';
+
 /**
  * ProtectedRoute Component
  * Protegge le route che richiedono autenticazione
@@ -181,6 +184,7 @@ function App() {
           <AppRoutes />
         </AuthProvider>
       </BrowserRouter>
+      <VersionBadge />
     </div>
   );
 }

@@ -88,12 +88,30 @@ from models_api import (
 # ==================== CONFIGURAZIONE APP ====================
 
 # FastAPI App
+APP_VERSION = "0.9.0-beta"
+APP_BUILD_DATE = "2026-02-14"
+APP_RELEASE_NAME = "MongoDB Auth + 2FA + Security Headers"
+
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
     description="Gestione rimborsi e documenti per 30 concessionarie autostradali",
-    version="1.0.0",
+    version=APP_VERSION,
 )
 api_router = APIRouter(prefix="/api")
+
+
+@api_router.get("/version")
+async def get_version():
+    """
+    GET /api/version
+    Restituisce versione applicazione (pubblico, no auth).
+    Utile per verificare che frontend e backend siano allineati dopo deploy.
+    """
+    return {
+        "version": APP_VERSION,
+        "build_date": APP_BUILD_DATE,
+        "release_name": APP_RELEASE_NAME,
+    }
 
 # ==================== AUTH ROUTES ====================
 # API per registrazione, login, logout e gestione sessioni

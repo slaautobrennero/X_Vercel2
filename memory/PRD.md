@@ -16,6 +16,8 @@ Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionar
 - ✅ Backup MongoDB cifrati AES-256 + uploads + Google Drive sync verificati (30/05/2026)
 - ✅ Multi-upload ricevute + Export PDF/Excel/CSV verificati
 - ✅ **Multi-ruolo (31/05/2026)**: un utente può possedere PIÙ ruoli contemporaneamente (es. Admin+Cassiere, Delegato+Cassiere). Solo `Iscritto` resta single-role.
+- ✅ **Sicurezza (14/02/2026)**: MongoDB Authentication, HTTP Security Headers (CSP/HSTS), 2FA TOTP per Admin/SuperAdmin
+- ✅ **Versioning (14/02/2026)**: badge versione visibile (`v0.9.0-beta` in basso a sinistra), endpoint `GET /api/version` per verifica CLI. Sorgenti: `frontend/src/version.js` + `backend/server.py` (APP_VERSION). Aggiornare entrambi ad ogni rilascio significativo.
 
 ## Ruoli (permessi BASE — atomici)
 | Ruolo | Crea rimborso | Approva/Rifiuta | Paga rimborso | Vede rimborsi |
