@@ -9,6 +9,6 @@
  * Visibile in basso a destra in ogni pagina (componente VersionBadge).
  * Letto anche dal backend tramite GET /api/version per verifica incrociata.
  */
-export const APP_VERSION = '0.9.0-beta';
+export const APP_VERSION = '0.9.1-beta';
 export const BUILD_DATE = '2026-02-14';
-export const RELEASE_NAME = 'MongoDB Auth + 2FA + Security Headers';
+export const RELEASE_NAME = 'Versioning + fix Dockerfile yarn.lock';

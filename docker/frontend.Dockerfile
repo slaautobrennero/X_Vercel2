@@ -21,10 +21,10 @@ ARG REACT_APP_BACKEND_URL=http://localhost:8001
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 
 # Copia package files
-COPY frontend/package.json frontend/yarn.lock ./
+COPY frontend/package.json ./
 
 # Installa dipendenze con legacy peer deps (fix date-fns conflict)
-RUN yarn install --frozen-lockfile --legacy-peer-deps
+RUN yarn install --legacy-peer-deps
 
 # Copia sorgenti frontend
 COPY frontend/ .
