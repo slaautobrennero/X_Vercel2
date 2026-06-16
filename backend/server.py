@@ -88,9 +88,9 @@ from models_api import (
 # ==================== CONFIGURAZIONE APP ====================
 
 # FastAPI App
-APP_VERSION = "0.9.1-beta"
+APP_VERSION = "0.9.2-beta"
 APP_BUILD_DATE = "2026-02-14"
-APP_RELEASE_NAME = "Versioning + fix Dockerfile yarn.lock"
+APP_RELEASE_NAME = "Fix Dockerfile: Node 20 + yarn senza lockfile"
 
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
