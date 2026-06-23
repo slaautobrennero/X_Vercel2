@@ -48,9 +48,9 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 # Esponi porta 80
 EXPOSE 80
 
-# Healthcheck
+# Healthcheck (usa 127.0.0.1 invece di localhost per evitare ambiguità IPv4/IPv6 in Alpine)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/health || exit 1
 
 # Nginx in foreground
 CMD ["nginx", "-g", "daemon off;"]
