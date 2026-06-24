@@ -28,10 +28,11 @@ async def _log_audit(
       old_value / new_value: valori prima/dopo
       note: testo libero opzionale
     """
+    actor_ruoli = actor.get("ruoli") or ([actor.get("ruolo")] if actor.get("ruolo") else [])
     entry = {
         "actor_id": actor.get("id"),
         "actor_nome": f"{actor.get('nome', '')} {actor.get('cognome', '')}".strip() or actor.get("email", "?"),
-        "actor_ruolo": actor.get("ruolo"),
+        "actor_ruolo": actor_ruoli[0] if actor_ruoli else None,
         "action": action,
         "target_type": target_type,
         "target_id": target_id,

@@ -17,7 +17,11 @@ Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionar
 - ✅ Multi-upload ricevute + Export PDF/Excel/CSV verificati
 - ✅ **Multi-ruolo (31/05/2026)**: un utente può possedere PIÙ ruoli contemporaneamente (es. Admin+Cassiere, Delegato+Cassiere). Solo `Iscritto` resta single-role.
 - ✅ **Sicurezza (14/02/2026)**: MongoDB Authentication, HTTP Security Headers (CSP/HSTS), 2FA TOTP per Admin/SuperAdmin
-- ✅ **Versioning (14/02/2026)**: badge versione visibile (`v0.9.0-beta` in basso a sinistra), endpoint `GET /api/version` per verifica CLI. Sorgenti: `frontend/src/version.js` + `backend/server.py` (APP_VERSION). Aggiornare entrambi ad ogni rilascio significativo.
+- ✅ **Versioning (14/02/2026)**: badge versione visibile (`v0.10.0-beta` in basso a sinistra), endpoint `GET /api/version` per verifica CLI. Sorgenti: `frontend/src/version.js` + `backend/server.py` + `backend/routes/public.py` (APP_VERSION). Aggiornare TUTTI E TRE ad ogni rilascio significativo.
+- ✅ **Refactor server.py Step 2 (15/02/2026)**: server.py da 2228 → 252 righe (-89%). Endpoint splittati in 13 moduli `routes/` (auth, users, audit, maps, sedi, motivi, rimborsi, annunci, contatti, documenti, notifiche, system, reports, public).
+- ✅ **Cleanup legacy ruolo (15/02/2026)**: il backend NON scrive più il campo `ruolo` stringa per nuovi utenti — solo `ruoli` array. Fallback di lettura mantenuto per safety. Da rimuovere fisicamente dal DB dopo 30 giorni di stabilità.
+- ✅ **Frontend healthcheck fix (15/02/2026)**: cambiato `localhost` → `127.0.0.1` nel Dockerfile (conflitto IPv4/IPv6 in Alpine).
+- ✅ **Dependency security upgrade (15/02/2026)**: certifi, idna, PyJWT, pyotp, requests, urllib3 aggiornati alle ultime versioni patch/minor. Tutte le altre dipendenze invariate (pymongo/motor/fastapi/bcrypt: rischio rotture, evitati).
 
 ## Ruoli (permessi BASE — atomici)
 | Ruolo | Crea rimborso | Approva/Rifiuta | Paga rimborso | Vede rimborsi |
