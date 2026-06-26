@@ -6,9 +6,9 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-APP_VERSION = "0.10.0-beta"
+APP_VERSION = "0.10.1-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Refactor server.py modulare + dep security + cleanup ruolo"
+APP_RELEASE_NAME = "Filtro sedi nella lista utenti"
 
 
 @router.get("/version")

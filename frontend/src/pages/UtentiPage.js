@@ -11,6 +11,7 @@ export default function UtentiPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sedeFilter, setSedeFilter] = useState('all');
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingRoles, setEditingRoles] = useState([]);  // ruoli selezionati nel modal
   const [savingRoles, setSavingRoles] = useState(false);
@@ -151,11 +152,35 @@ export default function UtentiPage() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    u.cognome?.toLowerCase().includes(search.toLowerCase()) ||
-    u.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredUsers = users.filter(u => {
+    const matchesSearch =
+      u.nome?.toLowerCase().includes(search.toLowerCase()) ||
+      u.cognome?.toLowerCase().includes(search.toLowerCase()) ||
+      u.email?.toLowerCase().includes(search.toLowerCase());
+    const matchesSede =
+      sedeFilter === 'all' ||
+      (sedeFilter === 'none' ? !u.sede_id : u.sede_id === sedeFilter);
+    return matchesSearch && matchesSede;
+  });
+
+  // Lista sedi distinte presenti tra gli utenti (per il filtro a tendina)
+  const sediOptions = React.useMemo(() => {
+    const map = new Map();
+    let hasNoSede = false;
+    users.forEach(u => {
+      if (u.sede_id && u.sede_nome) {
+        map.set(u.sede_id, u.sede_nome);
+      } else if (!u.sede_id) {
+        hasNoSede = true;
+      }
+    });
+    const arr = Array.from(map.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+    return { list: arr, hasNoSede };
+  }, [users]);
+
+  const showSedeFilter = sediOptions.list.length > 1 || (sediOptions.list.length >= 1 && sediOptions.hasNoSede);
 
   if (loading) {
     return (
@@ -172,17 +197,41 @@ export default function UtentiPage() {
         <p className="text-gray-600 mt-1">Gestione degli iscritti</p>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cerca per nome, cognome o email..."
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
-          data-testid="search-users-input"
-        />
+      {/* Search + Filtro Sede */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cerca per nome, cognome o email..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+            data-testid="search-users-input"
+          />
+        </div>
+        {showSedeFilter && (
+          <div className="sm:w-72">
+            <select
+              value={sedeFilter}
+              onChange={(e) => setSedeFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none text-sm"
+              data-testid="sede-filter-select"
+            >
+              <option value="all">Tutte le sedi ({users.length})</option>
+              {sediOptions.list.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.nome} ({users.filter(u => u.sede_id === s.id).length})
+                </option>
+              ))}
+              {sediOptions.hasNoSede && (
+                <option value="none">
+                  Senza sede ({users.filter(u => !u.sede_id).length})
+                </option>
+              )}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Users Table */}
