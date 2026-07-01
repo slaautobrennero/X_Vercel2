@@ -6,6 +6,22 @@ Benvenuto! Qui trovi tutte le guide per completare la configurazione del Portale
 
 ## 📚 Indice Guide
 
+### 0️⃣ **Aggiornamento Portale sul Raspberry Pi (procedura standard)**
+📄 **File:** [`GUIDA_AGGIORNAMENTO_PI.md`](./GUIDA_AGGIORNAMENTO_PI.md)
+
+**Cosa otterrai:**
+- ✅ Procedura passo-passo per aggiornare il portale sul Pi
+- ✅ Comandi Docker completi con troubleshooting cache
+- ✅ Alias bash per rendere tutto un unico comando `sla-update`
+- ✅ Tabella errori comuni + soluzioni
+
+**Tempo:** 15-20 minuti per aggiornamento completo (build compreso)
+**Difficoltà:** ⭐⭐☆☆☆ Facile
+
+**Quando usarla:** **OGNI VOLTA** che devi portare novità dal cloud Emergent al Pi
+
+---
+
 ### 1️⃣ **Backup Automatico MongoDB → Google Drive**
 📄 **File:** [`GUIDA_BACKUP_GOOGLE_DRIVE.md`](./GUIDA_BACKUP_GOOGLE_DRIVE.md)
 
