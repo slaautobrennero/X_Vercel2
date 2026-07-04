@@ -22,6 +22,9 @@ Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionar
 - ✅ **Cleanup legacy ruolo (15/02/2026)**: il backend NON scrive più il campo `ruolo` stringa per nuovi utenti — solo `ruoli` array. Fallback di lettura mantenuto per safety. Da rimuovere fisicamente dal DB dopo 30 giorni di stabilità.
 - ✅ **Frontend healthcheck fix (15/02/2026)**: cambiato `localhost` → `127.0.0.1` nel Dockerfile (conflitto IPv4/IPv6 in Alpine).
 - ✅ **Dependency security upgrade (15/02/2026)**: certifi, idna, PyJWT, pyotp, requests, urllib3 aggiornati alle ultime versioni patch/minor. Tutte le altre dipendenze invariate (pymongo/motor/fastapi/bcrypt: rischio rotture, evitati).
+- ✅ **v0.10.1-beta - Filtro sedi (15/02/2026)**: dropdown "Sede" nella lista utenti (contatori automatici, ordine alfabetico, visibile solo se >1 sede tra utenti caricati).
+- ✅ **v0.11.0-beta - Anti brute-force (15/02/2026)**: rate limiting via `slowapi` su endpoint sensibili (login 10/min, register 3/ora, reset-password 20/ora, calcola-km 60/ora) + safety-net globale 200/min. Integrazione **hCaptcha** su registrazione con modalità *fail-open* se `HCAPTCHA_SECRET` vuoto. CSP aggiornata per whitelistare hcaptcha.com. Test 15/15 passati.
+- ✅ **Guida aggiornamento Pi (15/02/2026)**: creato `docs/GUIDA_AGGIORNAMENTO_PI.md` con procedura completa git pull + rebuild Docker + troubleshooting cache + alias bash `sla-update`.
 
 ## Ruoli (permessi BASE — atomici)
 | Ruolo | Crea rimborso | Approva/Rifiuta | Paga rimborso | Vede rimborsi |
