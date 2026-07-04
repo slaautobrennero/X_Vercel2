@@ -12,6 +12,7 @@ from core.auth import (
     generate_temporary_password, get_current_user, hash_password,
 )
 from core.db import db
+from core.rate_limit import limiter
 from core.roles import normalize_roles_input, user_has_any_role, user_has_role
 from models_api import ToggleDisableRequest, UpdateRuoliRequest, UserUpdate
 
@@ -19,6 +20,7 @@ router = APIRouter()
 
 
 @router.post("/users/{user_id}/reset-password")
+@limiter.limit("20/hour")
 async def admin_reset_password(user_id: str, request: Request):
     """Admin/Segretario/SuperAdmin genera password temporanea per un utente."""
     current_user = await get_current_user(request)

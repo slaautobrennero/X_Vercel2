@@ -1,0 +1,51 @@
+{
+  "summary": "Backend testing for Portale SLA v0.11.0-beta (Fase B: Anti Brute-Force). All 15 pytest tests passed: version bump, CSP hCaptcha whitelist, non-regression on core flows, hCaptcha soft-disable + active mode, and rate limits on login (10/min), register (3/hour), reset-password (20/hour), calcola-km (60/hour). 429 responses include Retry-After header and italian detail. HCAPTCHA_SECRET restored to empty and test data cleaned after run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_b_security.py",
+    "/app/test_reports/pytest/phase_b_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/captcha.py: fail-closed on network error toward hcaptcha.com returns 503 — good UX for legit users but denies-of-service upstream can effectively block registrations. Consider circuit breaker + short-lived cache of last-known-good verify latency.",
+    "routes/auth.py: register endpoint sets `secure=True; samesite=none` cookies. In local/HTTP dev these cookies will not persist. Documented behavior, but worth calling out for anyone running behind plain HTTP.",
+    "routes/rimborsi.py: no DELETE endpoint for /rimborsi/{id} — expected soft-delete via stato PUT; make sure UX matches this contract (tests were adapted accordingly).",
+    "rate_limit.py: uses in-memory Limiter — perfect for the single-Pi deployment target but any horizontal scaling MUST switch to redis storage_uri as noted in the comment.",
+    "server.py: RateLimitExceeded handler returns detail as `str(exc.detail)` inside retry_after field but hardcodes `Retry-After: 60` seconds. If a heavier per-hour limit is hit, client is told to retry in 60s but the bucket resets in up to 3600s. Consider computing Retry-After from the actual window."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_b_security.py",
+    "/app/backend/tests/__init__.py",
+    "/app/test_reports/pytest/phase_b_results.xml",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 tests passed)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024! — matches /app/memory/test_credentials.md",
+  "seed_data_creation": "Test users (email prefix 'test_') created and cleaned up automatically by module-scoped autouse fixture. No persistent seed data left. HCAPTCHA_SECRET restored to '' at teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Rate limits are in-memory (slowapi) — restarting the backend resets counters. Through Kubernetes ingress, all requests share the same client IP so rate limits are shared across test runs. When testing rate limits, always run rate-limit-consuming tests LAST (order encoded in test file). If you re-run TestRateLimitRegister/Login soon after (within the limit window), first `sudo supervisorctl restart backend` to clear counters. Google Maps quota consumed by TestRateLimitCalcolaKm: ~61 requests per run.",
+  "verified_behaviors": {
+    "GET /api/version": "returns version=0.11.0-beta",
+    "CSP header": "contains hcaptcha.com in script-src, style-src, connect-src, frame-src",
+    "hCaptcha soft-disabled": "registration without hcaptcha_token succeeds (200) when HCAPTCHA_SECRET='' ",
+    "hCaptcha active — missing token": "returns 400 with detail 'Completa il captcha per continuare.'",
+    "hCaptcha active — dummy test-token": "returns 200 (verified against real hcaptcha.com siteverify with test-key)",
+    "POST /api/auth/login rate limit 10/min": "11th request returns 429 with Retry-After header + italian detail",
+    "POST /api/auth/register rate limit 3/hour": "4th request returns 429 (verified with 5-request burst → 3x200 + 2x429)",
+    "POST /api/users/{id}/reset-password 20/hour": "21st request returns 429",
+    "POST /api/calcola-km 60/hour": "61st request returns 429",
+    "Non-regression": "admin login, /auth/me, /sedi, /motivi-rimborso, /notifiche, /rimborsi (create+list+update) all working"
+  }
+}

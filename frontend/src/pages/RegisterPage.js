@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { formatApiErrorDetail } from '../lib/utils';
 import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const HCAPTCHA_SITE_KEY = process.env.REACT_APP_HCAPTCHA_SITE_KEY || '';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -28,6 +30,8 @@ export default function RegisterPage() {
   const [sedi, setSedi] = useState([]);
   const [sediLoading, setSediLoading] = useState(true);
   const [sediError, setSediError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef(null);
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -85,6 +89,12 @@ export default function RegisterPage() {
       }
     }
 
+    // hCaptcha token required only if the site key is configured
+    if (HCAPTCHA_SITE_KEY && !captchaToken) {
+      setError('Completa il captcha per continuare.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -96,10 +106,18 @@ export default function RegisterPage() {
         delete registerData.cap;
         delete registerData.iban;
       }
+      if (captchaToken) {
+        registerData.hcaptcha_token = captchaToken;
+      }
       await register(registerData);
       navigate('/');
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+      // Reset captcha on error (token è single-use)
+      if (captchaRef.current) {
+        captchaRef.current.resetCaptcha();
+      }
+      setCaptchaToken('');
     } finally {
       setLoading(false);
     }
@@ -340,10 +358,23 @@ export default function RegisterPage() {
               </>
             )}
 
+            {HCAPTCHA_SITE_KEY && (
+              <div className="flex justify-center py-2" data-testid="register-captcha-wrapper">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  languageOverride="it"
+                  onVerify={(token) => setCaptchaToken(token)}
+                  onExpire={() => setCaptchaToken('')}
+                  onError={() => setCaptchaToken('')}
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-4 py-2.5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              disabled={loading || (HCAPTCHA_SITE_KEY && !captchaToken)}
+              className="w-full bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-4 py-2.5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="register-submit-btn"
             >
               {loading ? 'Registrazione in corso...' : (

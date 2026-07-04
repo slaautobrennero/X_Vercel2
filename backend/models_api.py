@@ -23,6 +23,7 @@ class UserCreate(UserBase):
     sede_id: Optional[str] = None
     ruolo: str = "iscritto"
     ruoli: Optional[List[str]] = None
+    hcaptcha_token: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

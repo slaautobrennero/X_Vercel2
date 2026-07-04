@@ -20,6 +20,10 @@ WORKDIR /app
 ARG REACT_APP_BACKEND_URL=http://localhost:8001
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 
+# Argomento per hCaptcha (facoltativo, vuoto = captcha disabilitato)
+ARG REACT_APP_HCAPTCHA_SITE_KEY=
+ENV REACT_APP_HCAPTCHA_SITE_KEY=$REACT_APP_HCAPTCHA_SITE_KEY
+
 # Copia package files
 COPY frontend/package.json ./
 

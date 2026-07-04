@@ -9,12 +9,14 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.auth import get_current_user
 from core.config import GOOGLE_MAPS_API_KEY
+from core.rate_limit import limiter
 from models_api import CalcoloKmRequest
 
 router = APIRouter()
 
 
 @router.post("/calcola-km")
+@limiter.limit("60/hour")
 async def calcola_km(data: CalcoloKmRequest, request: Request):
     await get_current_user(request)
 

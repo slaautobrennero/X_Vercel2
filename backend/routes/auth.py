@@ -13,8 +13,10 @@ from core.auth import (
     create_access_token, create_refresh_token, get_current_user,
     hash_password, validate_password_strength, verify_password,
 )
+from core.captcha import verify_hcaptcha
 from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.db import db
+from core.rate_limit import limiter
 from core.roles import user_has_any_role
 from models_api import (
     ChangePasswordRequest, LoginRequest, TOTPDisableRequest, TOTPEnableRequest,
@@ -25,7 +27,8 @@ router = APIRouter()
 
 
 @router.post("/auth/register")
-async def register(user_data: UserCreate, response: Response):
+@limiter.limit("3/hour")
+async def register(user_data: UserCreate, request: Request, response: Response):
     """
     POST /api/auth/register
     Registrazione nuovo utente.
@@ -39,6 +42,10 @@ async def register(user_data: UserCreate, response: Response):
     """
     email = user_data.email.lower()
     validate_password_strength(user_data.password)
+
+    # Verifica hCaptcha (se HCAPTCHA_SECRET è configurato)
+    client_ip = request.client.host if request.client else None
+    await verify_hcaptcha(user_data.hcaptcha_token, action="register", client_ip=client_ip)
 
     existing = await db.users.find_one({"email": email})
     if existing:
@@ -90,6 +97,7 @@ async def register(user_data: UserCreate, response: Response):
 
 
 @router.post("/auth/login")
+@limiter.limit("10/minute")
 async def login(login_data: LoginRequest, request: Request, response: Response):
     email = login_data.email.lower()
     identifier = f"{request.client.host}:{email}"

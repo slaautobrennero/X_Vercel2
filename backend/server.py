@@ -36,12 +36,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 
 # === Core moduli ===
 from core.auth import hash_password, verify_password
 from core.config import FRONTEND_ORIGIN_REGEX, logger
 from core.db import client, db
+from core.rate_limit import limiter
 from core.scheduler import _pending_reimbursements_scheduler
 
 # === Route modules ===
@@ -64,15 +68,33 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.10.1-beta"
+APP_VERSION = "0.11.0-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Refactor server.py modulare + dep security + cleanup ruolo"
+APP_RELEASE_NAME = "Anti brute-force: rate limiting + hCaptcha"
 
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
     description="Gestione rimborsi e documenti per 30 concessionarie autostradali",
     version=APP_VERSION,
 )
+
+# ==================== RATE LIMITING (slowapi) ====================
+# Attivato per proteggere endpoint sensibili (auth, reset password, google maps).
+# Vedi core/rate_limit.py per configurazione.
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Risposta uniforme e in italiano quando un client supera il rate limit."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Troppe richieste in poco tempo. Attendi qualche secondo e riprova.",
+            "retry_after": str(exc.detail),
+        },
+        headers={"Retry-After": "60"},
+    )
 
 # === Aggregazione di tutti i router sotto /api ===
 api_router = APIRouter(prefix="/api")
@@ -231,16 +253,25 @@ async def security_headers_middleware(request: Request, call_next):
     )
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com "
+        "https://hcaptcha.com https://*.hcaptcha.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+        "https://hcaptcha.com https://*.hcaptcha.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com; "
-        "connect-src 'self' https://maps.googleapis.com; "
+        "connect-src 'self' https://maps.googleapis.com "
+        "https://hcaptcha.com https://*.hcaptcha.com; "
+        "frame-src https://hcaptcha.com https://*.hcaptcha.com; "
         "frame-ancestors 'none'; "
         "object-src 'none'; "
         "base-uri 'self'"
     )
     return response
+
+
+# ==================== RATE LIMIT MIDDLEWARE ====================
+# Deve stare DOPO il router per non intercettare le risposte custom (es. Retry-After).
+app.add_middleware(SlowAPIMiddleware)
 
 
 app.add_middleware(

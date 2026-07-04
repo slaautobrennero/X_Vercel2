@@ -69,7 +69,10 @@ services:
       
       # Google Maps (opzionale)
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-      
+
+      # hCaptcha (opzionale, anti-bot su registrazione)
+      HCAPTCHA_SECRET: ${HCAPTCHA_SECRET:-}
+
       # Frontend URL per CORS
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     volumes:
@@ -88,6 +91,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
       args:
         REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+        REACT_APP_HCAPTCHA_SITE_KEY: ${REACT_APP_HCAPTCHA_SITE_KEY:-}
     container_name: sla-frontend
     restart: unless-stopped
     depends_on:
