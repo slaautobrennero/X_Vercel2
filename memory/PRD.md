@@ -24,6 +24,7 @@ Portale gestionale "Sindacato Lavoratori Autostradali" (SLA) per 30 concessionar
 - ✅ **Dependency security upgrade (15/02/2026)**: certifi, idna, PyJWT, pyotp, requests, urllib3 aggiornati alle ultime versioni patch/minor. Tutte le altre dipendenze invariate (pymongo/motor/fastapi/bcrypt: rischio rotture, evitati).
 - ✅ **v0.10.1-beta - Filtro sedi (15/02/2026)**: dropdown "Sede" nella lista utenti (contatori automatici, ordine alfabetico, visibile solo se >1 sede tra utenti caricati).
 - ✅ **v0.11.0-beta - Anti brute-force (15/02/2026)**: rate limiting via `slowapi` su endpoint sensibili (login 10/min, register 3/ora, reset-password 20/ora, calcola-km 60/ora) + safety-net globale 200/min. Integrazione **hCaptcha** su registrazione con modalità *fail-open* se `HCAPTCHA_SECRET` vuoto. CSP aggiornata per whitelistare hcaptcha.com. Test 15/15 passati.
+- ✅ **v0.11.1-beta - Favicon & Branding (15/02/2026)**: favicon multi-size generato dal logo SLA (favicon.ico multi-frame + PNG 16/32 + apple-touch-icon 180 + SVG fallback + 8 PWA icons + 2 maskable). Titolo tab: "Portale SLA — Sindacato Lavoratori Autostradali". Meta theme-color `#1E4D8C`, apple-web-app title "SLA", manifest.json aggiornato con 10 icone e lingua `it-IT`. Base PWA pronta.
 - ✅ **Guida aggiornamento Pi (15/02/2026)**: creato `docs/GUIDA_AGGIORNAMENTO_PI.md` con procedura completa git pull + rebuild Docker + troubleshooting cache + alias bash `sla-update`.
 
 ## Ruoli (permessi BASE — atomici)
