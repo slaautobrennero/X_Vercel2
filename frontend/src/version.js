@@ -9,6 +9,6 @@
  * Visibile in basso a destra in ogni pagina (componente VersionBadge).
  * Letto anche dal backend tramite GET /api/version per verifica incrociata.
  */
-export const APP_VERSION = '0.11.1-beta';
+export const APP_VERSION = '0.11.2-beta';
 export const BUILD_DATE = '2026-02-15';
-export const RELEASE_NAME = 'Favicon SLA + branding tab browser';
+export const RELEASE_NAME = 'Favicon SLA con logo originale';
