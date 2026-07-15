@@ -1,0 +1,42 @@
+{
+  "summary": "Backend testing for Portale SLA v0.11.3-beta - Fix load .env override=False + secrets out of repo. All 12 pytest tests passed: (1) load_dotenv(override=False) verified in BOTH core/config.py and utils/config.py — pre-set os.environ value wins over .env file, and .env file value is used when os.environ is unset; (2) /api/version returns 0.11.3-beta with release_name containing 'Fix load .env'; (3) POST /api/calcola-km error handling: empty key → 500 'Google Maps API non configurata', invalid key → 400 with 'REQUEST_DENIED'; (4) Non-regression on login, /auth/me, /sedi, /rimborsi, /notifiche; (5) Rate limit 60/hour still enforced on /api/calcola-km (verified with 140 req burst). backend/.env restored to original state and backend restarted at teardown.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/* (all endpoints with @limiter.limit)", "issue": "Public URL routes requests via Cloudflare + k8s ingress; the backend observes >1 client IP alternating across requests (bucket keyed on IP). To reliably trigger 60/hour on /calcola-km via the public URL we needed ~140 requests (not 62). Not a functional bug of the fix under review; observation for future rate-limit tests."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_dotenv_override_v0113.py",
+    "/app/test_reports/pytest/dotenv_override_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/config.py and utils/config.py: BOTH modules load_dotenv independently. If someone imports utils.config first and then core.config, load_dotenv runs twice. override=False makes this safe now, but consider consolidating to a single config module to avoid maintenance drift (they already diverge — utils.config exposes Settings, core.config exposes module-level constants).",
+    ".dockerignore excludes 'tests/' and 'test_reports/' at the top level — good. But note that backend/tests/ is NOT explicitly excluded and will still be COPY-ed into the image if the Dockerfile does `COPY backend/ /app/backend/`. Consider adding 'backend/tests/' if pytest artefacts shouldn't ship to the Pi.",
+    "routes/maps.py: on httpx.RequestError it raises HTTPException 500 including the raw exception text (str(e)). Fine for debugging but could leak proxy/host info; consider logging the exception and returning a generic message.",
+    "server.py:96 Retry-After header hardcoded to 60s regardless of the actual rate-limit window; already noted in iteration_2 — not addressed yet.",
+    "core/rate_limit.py: default_limits=['200/minute'] is a safety net. With k8s ingress observing multiple client IPs per real user (Cloudflare edges), the effective per-user limit is HIGHER than the configured value. For production on a single-Pi behind a home router this is fine (single NAT'd IP), but the sandbox behavior is worth documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dotenv_override_v0113.py (new)",
+    "/app/test_reports/pytest/dotenv_override_results.xml (new)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 tests passed)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024! — from /app/memory/test_credentials.md",
+  "seed_data_creation": "None. Tests were idempotent: /rimborsi list only (no create in this iteration). backend/.env modified transiently and restored via .env.itest_backup at module teardown; backend restarted at teardown to reload original config.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "load_dotenv override=False test is done via SUBPROCESS to isolate os.environ (import-time behavior). Do NOT try to test this in-process — the config module is already imported when pytest starts and can't be re-imported cleanly. The rate-limit test is intentionally lenient (asserts >=1 429 in 140 requests) because public URL observes multiple ingress client IPs. Do NOT decrease the burst size below ~130 without verifying the ingress topology. /app/backend/.env is auto-restored at module teardown; if a test crashes mid-way, restore manually from git or set GOOGLE_MAPS_API_KEY back to 'AIzaSyDTFkaWGVqEqcfPcYpkE_WeLFyp55k8p3I' (the placeholder key still in the repo — .env is now git-ignored per this fix but the working-copy remains for local dev).",
+  "verified_behaviors": {
+    "core.config load_dotenv override=False": "GOOGLE_MAPS_API_KEY pre-set in os.environ is preserved; .env value is used only when env is unset",
+    "utils.config load_dotenv override=False": "Same behavior — env wins over file",
+    "GET /api/version": "returns version=0.11.3-beta, release_name contains 'Fix load .env'",
+    "POST /api/calcola-km (empty key)": "returns 500 detail='Google Maps API non configurata'",
+    "POST /api/calcola-km (invalid key)": "returns 400 detail contains 'REQUEST_DENIED'",
+    "POST /api/calcola-km rate limit 60/hour": "enforced (140-request burst yielded 30x 429 in tail)",
+    "Non-regression": "login, /auth/me, /sedi, /rimborsi list, /notifiche all 200 OK"
+  }
+}

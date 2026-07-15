@@ -7,9 +7,11 @@ from pathlib import Path
 import os
 import logging
 
-# Carica .env all'avvio
+# Carica .env all'avvio SENZA sovrascrivere variabili già settate (docker-compose)
+# In produzione: le env vars vengono da docker-compose environment; il .env locale
+# è ignorato dal container (.dockerignore) ma resta utile in dev locale.
 ROOT_DIR = Path(__file__).parent.parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 # MongoDB
 MONGO_URL = os.environ['MONGO_URL']

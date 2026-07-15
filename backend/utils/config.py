@@ -17,9 +17,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Carica variabili da .env
+# Carica variabili da .env SENZA sovrascrivere quelle già settate (docker-compose)
 ROOT_DIR = Path(__file__).parent.parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 
 class Settings:
