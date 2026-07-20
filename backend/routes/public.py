@@ -6,9 +6,19 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-APP_VERSION = "0.11.3-beta"
+APP_VERSION = "0.11.4-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Fix load .env: no override + secrets fuori dal repo"
+APP_RELEASE_NAME = "Fix rate limit su calcola-km + endpoint health"
+
+
+@router.get("/health")
+async def health():
+    """
+    GET /api/health
+    Healthcheck usato dal container Docker (HEALTHCHECK del Dockerfile).
+    Deve restare estremamente leggero: nessuna query DB o chiamata esterna.
+    """
+    return {"status": "ok"}
 
 
 @router.get("/version")

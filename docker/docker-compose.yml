@@ -16,7 +16,7 @@
 #
 # ============================================
 
-version: '3.8'
+# NOTA: 'version' obsoleto in docker compose v2, rimosso per evitare warning.
 
 services:
   # ==========================================

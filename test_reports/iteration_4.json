@@ -1,0 +1,43 @@
+{
+  "summary": "Backend testing for Portale SLA v0.11.4-beta P0 fix — slowapi crash on POST /api/calcola-km and POST /api/users/{id}/reset-password due to missing 'response: Response' parameter. All 13 pytest tests passed: (1) version bump verified 0.11.4-beta with release_name 'Fix rate limit su calcola-km + endpoint health'; (2) NEW /api/health endpoint returns 200 {\"status\":\"ok\"} publicly; (3) POST /api/calcola-km NO longer crashes with slowapi Exception — returns 400 with 'Impossibile calcolare il percorso: REQUEST_DENIED' (dummy Google key handled correctly); (4) POST /api/users/{id}/reset-password returns 200 with temporary_password and persists must_change_password=true / password_reset_at / password_reset_by in DB; (5) X-RateLimit-* headers verified present on the 200 OK reset-password response (proof slowapi header injection works after adding the parameter); (6) Non-regression on login, /auth/me, /sedi, /rimborsi list+CRUD, /notifiche, /motivi-rimborso — all 200 OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/calcola-km", "issue": "X-RateLimit-* headers NOT injected on 400 (HTTPException) responses — slowapi only injects on 200 OK path. Not a regression of the P0 fix (proven by reset-password 200 having headers), but users will not see rate-limit visibility on Google-Maps error responses. Consider catching REQUEST_DENIED and returning 200 with an in-body error instead, if header visibility is desired."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_v0114_ratelimit_fix.py",
+    "/app/test_reports/pytest/v0114_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/maps.py L28: local variable `response = await client.get(...)` SHADOWS the endpoint `response: Response` parameter. Currently harmless (slowapi accesses the FastAPI-injected Response via kwargs, not via the function's local scope), but confusing and fragile. Rename local to `gmaps_response` (or `gmaps_result`) to avoid any risk of future breakage if slowapi internals change.",
+    "routes/maps.py L52: `raise HTTPException(status_code=500, detail=f\"Errore di connessione: {str(e)}\")` still leaks raw httpx exception text — flagged in iteration_3, still not addressed. Consider logger.exception + generic message.",
+    "routes/public.py: /health returns {\"status\":\"ok\"} with no DB check, which is CORRECT for a Docker liveness probe (fail-fast on process crash only). If a readiness probe is added later, it SHOULD do a `db.command('ping')` to verify Mongo connectivity.",
+    "server.py L96: `Retry-After: 60` hardcoded — remains inaccurate for endpoints with limits >1 minute (calcola-km is 60/hour → Retry-After should scale). Flagged in iteration_2 and iteration_3; still not addressed.",
+    "routes/users.py L38: check `user_has_any_role(target_user, ['superadmin', 'superuser'])` is BYPASSED when current_user is superadmin (correct). But a non-superadmin admin CAN still reset the password of a fellow admin in the same sede — no `superuser` protection, and no protection of other 'admin' users. Consider adding admin-vs-admin lateral movement protection.",
+    "routes/users.py L46: `hash_password(temp_password)` uses same bcrypt config as normal password. Confirm cost factor is not <10 (from core/auth.py) — recommended >=12 in 2026. (Iteration_3 verified core.auth uses bcrypt $2b$ format — cost was not measured.)",
+    "docker/docker-compose.yml: removal of `version: 3.8` — Compose V2 no longer requires it (deprecation warning gone). Verified indirectly via code diff; not tested at runtime here."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v0114_ratelimit_fix.py (new)",
+    "/app/test_reports/pytest/v0114_results.xml (new)",
+    "/app/test_reports/iteration_4.json (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13 tests passed)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024! — from /app/memory/test_credentials.md",
+  "seed_data_creation": "Ephemeral MongoDB user 'test_v0114_target@example.com' created via pymongo for reset-password tests, cleaned up in fixture teardown. One test rimborso created via API and cleaned up via pymongo. No persistent test data left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The P0 fix (adding response: Response to /calcola-km and /reset-password) is verified fully working. Do NOT be alarmed by absence of X-RateLimit-* headers on /calcola-km 400 responses — this is slowapi's own behavior (headers only injected on 200 OK). The reset-password 200 test proves the injection works. Rate-limit 429 trigger test on calcola-km was intentionally skipped because iteration_3 documented that public URL routes through Cloudflare/k8s ingress alternating client IPs, requiring ~140 requests to hit the 60/hour bucket; the phase_b_security test file still covers 429 behavior. Login uses httpOnly cookies (samesite=none, secure=true) — requests.Session() handles them automatically. Ephemeral user in test is created via pymongo (bypasses password hashing) — do not try to log in as that user.",
+  "rca of the issue": "ROOT CAUSE (fixed by main agent): slowapi's @limiter.limit decorator requires a `response: Response` parameter on the endpoint signature so slowapi's middleware can access the Response object and inject X-RateLimit-Limit/Remaining/Reset headers. When Phase B added @limiter.limit('60/hour') to /api/calcola-km without the parameter, slowapi raised 'parameter response must be an instance of starlette.responses.Response' AFTER the Google Maps call already succeeded (silently consuming Google quota), producing HTTP 500 to the user. Same bug on /users/{id}/reset-password. FIX v0.11.4-beta added `response: Response` as 3rd param to both endpoints — VERIFIED: no more crash marker in response body, reset-password path returns 200 with X-RateLimit-* headers correctly injected. REPRODUCTION (pre-fix): authenticate as superadmin, POST /api/calcola-km with any body → 500 with slowapi crash traceback. POST-FIX: same request → 400 REQUEST_DENIED (correct handling of dummy key).",
+  "verified_behaviors": {
+    "GET /api/version": "returns version=0.11.4-beta, release_name='Fix rate limit su calcola-km + endpoint health'",
+    "GET /api/health": "returns 200 {\"status\":\"ok\"} publicly, no auth required, body <100 bytes",
+    "POST /api/calcola-km (dummy key)": "returns 400 'Impossibile calcolare il percorso: REQUEST_DENIED' — NO slowapi crash",
+    "POST /api/users/{id}/reset-password (superadmin)": "returns 200 with temporary_password (12 chars), user_email; DB persists must_change_password=true, password_reset_at, password_reset_by; X-RateLimit-* headers present",
+    "Non-regression": "login, /auth/me, /sedi (A22), /rimborsi list+CRUD, /notifiche, /motivi-rimborso (RSA/Sede/Altro) all 200 OK"
+  }
+}

@@ -5,7 +5,7 @@ Gestione utenti: lista, update, cambio ruoli, reset password, disabilita, cancel
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from core.audit import _log_audit
 from core.auth import (
@@ -21,7 +21,7 @@ router = APIRouter()
 
 @router.post("/users/{user_id}/reset-password")
 @limiter.limit("20/hour")
-async def admin_reset_password(user_id: str, request: Request):
+async def admin_reset_password(user_id: str, request: Request, response: Response):
     """Admin/Segretario/SuperAdmin genera password temporanea per un utente."""
     current_user = await get_current_user(request)
 

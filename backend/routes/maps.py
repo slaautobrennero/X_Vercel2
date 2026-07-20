@@ -5,7 +5,7 @@ Integrazione Google Maps (Directions API) per calcolo km.
 import math
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from core.auth import get_current_user
 from core.config import GOOGLE_MAPS_API_KEY
@@ -17,7 +17,7 @@ router = APIRouter()
 
 @router.post("/calcola-km")
 @limiter.limit("60/hour")
-async def calcola_km(data: CalcoloKmRequest, request: Request):
+async def calcola_km(data: CalcoloKmRequest, request: Request, response: Response):
     await get_current_user(request)
 
     if not GOOGLE_MAPS_API_KEY:

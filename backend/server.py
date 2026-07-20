@@ -68,9 +68,9 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.11.3-beta"
+APP_VERSION = "0.11.4-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Fix load .env: no override + secrets fuori dal repo"
+APP_RELEASE_NAME = "Fix rate limit su calcola-km + endpoint health"
 
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
