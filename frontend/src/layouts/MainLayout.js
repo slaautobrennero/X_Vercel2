@@ -214,6 +214,17 @@ export default function MainLayout() {
         <main className="p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
+
+        {/* Footer con link legali */}
+        <footer className="mt-auto border-t border-gray-200 bg-white/50 py-4 px-6 text-center text-xs text-gray-500" data-testid="main-footer">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link to="/privacy" className="hover:text-[#1E4D8C] hover:underline" data-testid="footer-privacy-link">Privacy</Link>
+            <span>·</span>
+            <Link to="/cookie-policy" className="hover:text-[#1E4D8C] hover:underline" data-testid="footer-cookie-link">Cookie Policy</Link>
+            <span>·</span>
+            <Link to="/termini" className="hover:text-[#1E4D8C] hover:underline" data-testid="footer-termini-link">Termini di Servizio</Link>
+          </div>
+        </footer>
       </div>
     </div>
   );

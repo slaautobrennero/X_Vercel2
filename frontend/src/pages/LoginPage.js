@@ -153,6 +153,15 @@ export default function LoginPage() {
               </Link>
             </p>
           </div>
+
+          {/* Link legali (pubblici) */}
+          <div className="mt-6 pt-4 border-t border-gray-200 text-center text-xs text-gray-500 flex flex-wrap items-center justify-center gap-x-3 gap-y-1" data-testid="login-legal-links">
+            <Link to="/privacy" className="hover:text-[#1E4D8C] hover:underline">Privacy</Link>
+            <span>·</span>
+            <Link to="/cookie-policy" className="hover:text-[#1E4D8C] hover:underline">Cookie</Link>
+            <span>·</span>
+            <Link to="/termini" className="hover:text-[#1E4D8C] hover:underline">Termini</Link>
+          </div>
         </div>
       </div>
     </div>

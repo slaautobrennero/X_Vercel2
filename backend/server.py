@@ -55,6 +55,7 @@ from routes import (
     auth as routes_auth,
     contatti as routes_contatti,
     documenti as routes_documenti,
+    gdpr as routes_gdpr,
     maps as routes_maps,
     motivi as routes_motivi,
     notifiche as routes_notifiche,
@@ -68,9 +69,9 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.11.4-beta"
+APP_VERSION = "0.12.0-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Fix rate limit su calcola-km + endpoint health"
+APP_RELEASE_NAME = "Privacy & Legal Compliance (GDPR)"
 
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",
@@ -112,6 +113,7 @@ api_router.include_router(routes_documenti.router)
 api_router.include_router(routes_notifiche.router)
 api_router.include_router(routes_system.router)
 api_router.include_router(routes_reports.router)
+api_router.include_router(routes_gdpr.router)
 
 
 # ==================== STARTUP / SHUTDOWN ====================

@@ -24,6 +24,9 @@ class UserCreate(UserBase):
     ruolo: str = "iscritto"
     ruoli: Optional[List[str]] = None
     hcaptcha_token: Optional[str] = None
+    privacy_accepted: bool = False
+    termini_accepted: bool = False
+    privacy_version: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

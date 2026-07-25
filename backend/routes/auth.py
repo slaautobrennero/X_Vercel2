@@ -43,6 +43,13 @@ async def register(user_data: UserCreate, request: Request, response: Response):
     email = user_data.email.lower()
     validate_password_strength(user_data.password)
 
+    # GDPR: consenso obbligatorio
+    if not user_data.privacy_accepted or not user_data.termini_accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="Devi accettare l'Informativa Privacy e i Termini di Servizio per registrarti.",
+        )
+
     # Verifica hCaptcha (se HCAPTCHA_SECRET è configurato)
     client_ip = request.client.host if request.client else None
     await verify_hcaptcha(user_data.hcaptcha_token, action="register", client_ip=client_ip)
@@ -83,6 +90,18 @@ async def register(user_data: UserCreate, request: Request, response: Response):
 
     result = await db.users.insert_one(user_doc)
     user_id = str(result.inserted_id)
+
+    # GDPR: salva record del consenso privacy
+    await db.consensi_privacy.insert_one({
+        "user_id": result.inserted_id,
+        "email": email,
+        "privacy_version": user_data.privacy_version or "1.0",
+        "termini_accepted": True,
+        "privacy_accepted": True,
+        "timestamp": datetime.now(timezone.utc),
+        "ip": client_ip,
+        "user_agent": request.headers.get("user-agent", "")[:500],
+    })
 
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)

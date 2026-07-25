@@ -1,0 +1,59 @@
+{
+  "summary": "Backend testing for v0.12.0-beta GDPR compliance MVP. Created /app/backend/tests/test_gdpr_v012.py with 20 pytest cases. Result: 17/20 PASS, 3/20 FAIL. All authenticated GDPR endpoints in routes/gdpr.py are BROKEN due to two systemic coding bugs: (1) `user['_id']` is used but core.auth.get_current_user() returns user['id'] (string) after popping '_id' — causes KeyError '_id' on every authenticated GDPR call; (2) `_log_audit(user, 'action', details=...)` is called with an invalid kwarg 'details' and missing required positional 'target_type'. Publicly visible endpoints (privacy, cookie, termini, versioni, impostazioni-sindacato GET, register consent enforcement, /gdpr/registro-trattamenti, RBAC 403, /version, non-regression on login/me/rimborsi/sedi/notifiche) ALL WORK CORRECTLY.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/gdpr/my-data", "issue": "500 KeyError '_id' — routes/gdpr.py:166 uses user['_id'] but get_current_user() pops '_id' and sets 'id' (string). Fix: user_id = ObjectId(user['id']).", "priority": "CRITICAL"},
+      {"endpoint": "POST /api/gdpr/richiedi-cancellazione", "issue": "500 KeyError '_id' at gdpr.py:209 (user_id = ObjectId(user['_id'])). Same root cause. Additionally, gdpr.py:234 calls _log_audit(user, 'gdpr.richiesta_cancellazione', details={...}) — invalid signature (missing target_type, no 'details' kwarg).", "priority": "CRITICAL"},
+      {"endpoint": "POST /api/gdpr/annulla-cancellazione", "issue": "500 KeyError '_id' at gdpr.py:246. Also _log_audit(user, 'gdpr.annulla_cancellazione') at L253 is missing required target_type param.", "priority": "CRITICAL"},
+      {"endpoint": "GET /api/gdpr/stato-cancellazione", "issue": "500 KeyError '_id' at gdpr.py:262 — ObjectId(user['_id']).", "priority": "CRITICAL"},
+      {"endpoint": "PUT /api/impostazioni-sindacato", "issue": "500 TypeError: _log_audit() got an unexpected keyword argument 'details' (gdpr.py:117). _log_audit signature is (actor, action, target_type, target_id=..., target_label=..., ...). Must pass target_type='impostazioni' and use note=json.dumps(data) or similar.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_gdpr_v012.py",
+    "/app/test_reports/pytest/gdpr_v012_results.xml"
+  ],
+  "action_items": [
+    "FIX routes/gdpr.py: replace every occurrence of user['_id'] with ObjectId(user['id']) — 4 locations (L166, L209, L246, L262). Note the model already has user['id'] as a string from get_current_user.",
+    "FIX routes/gdpr.py: update all 3 _log_audit() calls to match core/audit.py signature. Current signature requires positional target_type; 'details' kwarg does not exist. Suggested replacements: L117 -> _log_audit(user, 'impostazioni.update', target_type='impostazioni', target_id='singleton', note=str(data)); L234 -> _log_audit(user, 'gdpr.richiesta_cancellazione', target_type='user', target_id=user['id'], target_label=user['email'], note=payload.motivo); L253 -> _log_audit(user, 'gdpr.annulla_cancellazione', target_type='user', target_id=user['id'], target_label=user['email']).",
+    "Retest after fix: 3 failing test cases in test_gdpr_v012.py should turn green."
+  ],
+  "critical_code_review_comments": [
+    "routes/gdpr.py has ZERO integration test coverage before deploy — 5 endpoints (all authenticated GDPR paths) 500-crash on first call. This is a regression-testing gap; the router was added without smoke-testing any authenticated endpoint locally.",
+    "routes/gdpr.py:166,209,246,262: pattern user['_id'] appears 4x. Root cause is developer assuming core.auth returns raw Mongo dict; but it deliberately maps _id -> id (string). Suggest adding a linter/CI rule or a helper get_user_oid(user) that centralizes ObjectId(user['id']).",
+    "routes/gdpr.py:117,234,253: _log_audit() calls all use non-existent 'details' kwarg — copy-paste from a different signature. Compare with routes/rimborsi.py or routes/users.py for correct usage pattern.",
+    "core/legal_templates.py:104 mentions grace period of 30 giorni — matches richiedi-cancellazione code path (+timedelta(days=30)). GOOD alignment.",
+    "gdpr.py:282 get_registro_trattamenti WORKS correctly (returns 4 trattamenti + titolare) — proves the router itself loads and RBAC works.",
+    "gdpr.py `get_settings()` creates default doc on first read — safe, idempotent. Verified via test_public_get_returns_correct_data returning Rapallo address + CF 91027960102.",
+    "GDPR consenso in auth/register.py:95-104 correctly persists to db.consensi_privacy with email/version/timestamp/ip/user-agent — verified by test_register_with_both_creates_consenso.",
+    "auth/register.py:47 correctly blocks registration with HTTP 400 when either privacy_accepted or termini_accepted is False — verified by two dedicated tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_gdpr_v012.py (new, 20 tests)",
+    "/app/test_reports/pytest/gdpr_v012_results.xml (new)"
+  ],
+  "success_rate": {"backend": "85% (17/20 tests passed, 5 endpoints critically broken)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test users prefixed test_gdpr_* created via /api/auth/register; consensi_privacy and richieste_cancellazione records auto-created. Session-scoped cleanup fixture removes them by regex ^test_gdpr_ from users, consensi_privacy, richieste_cancellazione at start and end of run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent fixes the two systemic bugs (user['_id'] -> ObjectId(user['id']) and _log_audit signature) in routes/gdpr.py, rerun: `python -m pytest /app/backend/tests/test_gdpr_v012.py -v`. All 20 tests should pass. The cleanup fixture is session-scoped and idempotent, so re-runs are safe. hCaptcha is disabled (HCAPTCHA_SECRET empty in .env) — register works without token. Login/register set httpOnly cookies with samesite=none, secure=true; requests.Session() handles them automatically. Non-regression suite (login, /auth/me, /sedi, /rimborsi, /notifiche) is included and all PASSED — v0.12.0-beta did not break v0.11.4 endpoints.",
+  "verified_behaviors": {
+    "GET /api/version": "0.12.0-beta, release_name='Privacy & Legal Compliance (GDPR)'",
+    "GET /api/impostazioni-sindacato (public)": "returns denominazione='SLA - CISAL', sede_legale contains 'Via Arpinati 22/1', codice_fiscale='91027960102'",
+    "GET /api/privacy": "200, version=1.0, content contains 'SLA - CISAL', 'Titolare del trattamento', \"Diritti dell'interessato\"",
+    "GET /api/cookie-policy": "200, version=1.0",
+    "GET /api/termini": "200, version=1.0",
+    "GET /api/versioni-documenti": "200, {privacy_version:1.0, cookie_version:1.0, termini_version:1.0}",
+    "POST /api/auth/register privacy=false": "HTTP 400 'Devi accettare l'Informativa Privacy...'",
+    "POST /api/auth/register termini=false": "HTTP 400",
+    "POST /api/auth/register both=true": "HTTP 200, user created, db.consensi_privacy record inserted with privacy_version, timestamp, ip, user_agent",
+    "GET /api/gdpr/registro-trattamenti (superadmin)": "200, 4 trattamenti + titolare",
+    "GET /api/gdpr/registro-trattamenti (non-superadmin)": "HTTP 403",
+    "PUT /api/impostazioni-sindacato (non-superadmin)": "HTTP 403 (RBAC OK before the audit crash path)",
+    "Non-regression": "login, /auth/me, /rimborsi, /sedi, /notifiche all 200 OK"
+  },
+  "rca of the issue": "TWO SYSTEMIC BUGS in routes/gdpr.py introduced with v0.12.0-beta GDPR router: (A) get_current_user() in core/auth.py:91-92 explicitly does user['id']=str(user['_id']); user.pop('_id', None). Therefore accessing user['_id'] inside gdpr.py endpoints raises KeyError. Fix: use ObjectId(user['id']) everywhere. Affects gdpr.py lines 166, 209, 246, 262. (B) core/audit.py _log_audit() signature is (actor, action, target_type, target_id=..., target_label=..., sede_id=..., old_value=..., new_value=..., note=...). It does NOT accept a 'details' kwarg. gdpr.py calls it with kwarg details=... at lines 117, 234, 253 — raises TypeError. All 5 authenticated GDPR endpoints affected. REPRODUCTION: authenticate as any user, GET /api/gdpr/my-data → 500 KeyError. As superadmin, PUT /api/impostazioni-sindacato with any body → 500 TypeError _log_audit unexpected keyword 'details'. MITIGATION for main agent: apply the two mechanical rewrites listed in action_items."
+}

@@ -50,6 +50,7 @@ import SediPage from './pages/SediPage';
 import ProfiloPage from './pages/ProfiloPage';
 import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
+import { PrivacyPage, CookiePolicyPage, TerminiPage } from './pages/LegalPage';
 
 // Layout - Layout principale con sidebar
 import MainLayout from './layouts/MainLayout';
@@ -126,6 +127,11 @@ function AppRoutes() {
           <RegisterPage />
         </PublicRoute>
       } />
+
+      {/* Public Legal Pages (accessibili senza login) */}
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/cookie-policy" element={<CookiePolicyPage />} />
+      <Route path="/termini" element={<TerminiPage />} />
 
       {/* Protected Routes */}
       <Route path="/" element={

@@ -31,6 +31,8 @@ export default function RegisterPage() {
   const [sediLoading, setSediLoading] = useState(true);
   const [sediError, setSediError] = useState('');
   const [captchaToken, setCaptchaToken] = useState('');
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [terminiAccepted, setTerminiAccepted] = useState(false);
   const captchaRef = useRef(null);
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -95,6 +97,12 @@ export default function RegisterPage() {
       return;
     }
 
+    // GDPR: consensi obbligatori
+    if (!privacyAccepted || !terminiAccepted) {
+      setError('Devi accettare l\'Informativa Privacy e i Termini di Servizio per registrarti.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -109,6 +117,9 @@ export default function RegisterPage() {
       if (captchaToken) {
         registerData.hcaptcha_token = captchaToken;
       }
+      registerData.privacy_accepted = true;
+      registerData.termini_accepted = true;
+      registerData.privacy_version = '1.0';
       await register(registerData);
       navigate('/');
     } catch (err) {
@@ -371,9 +382,47 @@ export default function RegisterPage() {
               </div>
             )}
 
+            {/* GDPR: consensi obbligatori */}
+            <div className="border border-gray-200 rounded-md p-4 bg-gray-50 space-y-3">
+              <label className="flex items-start gap-2 cursor-pointer" data-testid="register-privacy-label">
+                <input
+                  type="checkbox"
+                  checked={privacyAccepted}
+                  onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                  className="mt-1 h-4 w-4 text-[#1E4D8C] border-gray-300 rounded"
+                  data-testid="register-privacy-checkbox"
+                  required
+                />
+                <span className="text-sm text-gray-700">
+                  Ho letto e accetto l'
+                  <Link to="/privacy" target="_blank" className="text-[#1E4D8C] underline" data-testid="register-privacy-link">
+                    Informativa sulla Privacy
+                  </Link>{' '}
+                  (art. 13 GDPR) *
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer" data-testid="register-termini-label">
+                <input
+                  type="checkbox"
+                  checked={terminiAccepted}
+                  onChange={(e) => setTerminiAccepted(e.target.checked)}
+                  className="mt-1 h-4 w-4 text-[#1E4D8C] border-gray-300 rounded"
+                  data-testid="register-termini-checkbox"
+                  required
+                />
+                <span className="text-sm text-gray-700">
+                  Ho letto e accetto i{' '}
+                  <Link to="/termini" target="_blank" className="text-[#1E4D8C] underline" data-testid="register-termini-link">
+                    Termini di Servizio
+                  </Link>{' '}
+                  *
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading || (HCAPTCHA_SITE_KEY && !captchaToken)}
+              disabled={loading || (HCAPTCHA_SITE_KEY && !captchaToken) || !privacyAccepted || !terminiAccepted}
               className="w-full bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium rounded-md px-4 py-2.5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="register-submit-btn"
             >
