@@ -114,7 +114,7 @@ async def update_impostazioni_sindacato(payload: ImpostazioniSindacatoIn, reques
     await db.impostazioni_sindacato.update_one(
         {"_id": "singleton"}, {"$set": data}, upsert=True
     )
-    await _log_audit(user, "impostazioni.update", details=data)
+    await _log_audit(user, "impostazioni.update", target_type="impostazioni", note=str(data))
     return {"ok": True, "settings": data}
 
 
@@ -163,16 +163,16 @@ async def get_versioni_documenti():
 async def get_my_data(request: Request):
     """Diritto di accesso (art. 15 GDPR): tutti i dati personali dell'utente."""
     user = await get_current_user(request)
-    user_id = str(user["_id"])
+    user_id_str = user["id"]
+    user_oid = ObjectId(user_id_str)
 
     # Dati anagrafici
     anagrafica = {k: v for k, v in user.items() if k not in ("password_hash", "totp_secret")}
-    anagrafica["_id"] = str(anagrafica["_id"])
     if "sede_id" in anagrafica and anagrafica["sede_id"]:
         anagrafica["sede_id"] = str(anagrafica["sede_id"])
 
     # Rimborsi
-    rimborsi_cursor = db.rimborsi.find({"user_id": ObjectId(user_id)})
+    rimborsi_cursor = db.rimborsi.find({"user_id": user_oid})
     rimborsi = []
     async for r in rimborsi_cursor:
         r["_id"] = str(r["_id"])
@@ -182,7 +182,7 @@ async def get_my_data(request: Request):
         rimborsi.append(r)
 
     # Consensi
-    consensi_cursor = db.consensi_privacy.find({"user_id": ObjectId(user_id)})
+    consensi_cursor = db.consensi_privacy.find({"user_id": user_oid})
     consensi = []
     async for c in consensi_cursor:
         c["_id"] = str(c["_id"])
@@ -206,11 +206,11 @@ class RichiestaCancellazioneIn(BaseModel):
 async def richiedi_cancellazione(payload: RichiestaCancellazioneIn, request: Request):
     """Diritto all'oblio (art. 17 GDPR): richiesta cancellazione con grace period 30gg."""
     user = await get_current_user(request)
-    user_id = ObjectId(user["_id"])
+    user_oid = ObjectId(user["id"])
 
     # Verifica se esiste già una richiesta pending
     existing = await db.richieste_cancellazione.find_one({
-        "user_id": user_id,
+        "user_id": user_oid,
         "stato": "pending",
     })
     if existing:
@@ -222,7 +222,7 @@ async def richiedi_cancellazione(payload: RichiestaCancellazioneIn, request: Req
     now = datetime.now(timezone.utc)
     data_esecuzione = now + timedelta(days=30)
     doc = {
-        "user_id": user_id,
+        "user_id": user_oid,
         "email": user["email"],
         "motivo": payload.motivo or "",
         "stato": "pending",
@@ -231,7 +231,7 @@ async def richiedi_cancellazione(payload: RichiestaCancellazioneIn, request: Req
         "ip": request.client.host if request.client else None,
     }
     result = await db.richieste_cancellazione.insert_one(doc)
-    await _log_audit(user, "gdpr.richiesta_cancellazione", details={"motivo": payload.motivo})
+    await _log_audit(user, "gdpr.richiesta_cancellazione", target_type="user", target_id=user["id"], note=payload.motivo or "")
     return {
         "ok": True,
         "id": str(result.inserted_id),
@@ -243,14 +243,14 @@ async def richiedi_cancellazione(payload: RichiestaCancellazioneIn, request: Req
 @router.post("/gdpr/annulla-cancellazione")
 async def annulla_cancellazione(request: Request):
     user = await get_current_user(request)
-    user_id = ObjectId(user["_id"])
+    user_oid = ObjectId(user["id"])
     result = await db.richieste_cancellazione.update_one(
-        {"user_id": user_id, "stato": "pending"},
+        {"user_id": user_oid, "stato": "pending"},
         {"$set": {"stato": "annullata", "annullata_il": datetime.now(timezone.utc)}},
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Nessuna richiesta in corso da annullare.")
-    await _log_audit(user, "gdpr.annulla_cancellazione")
+    await _log_audit(user, "gdpr.annulla_cancellazione", target_type="user", target_id=user["id"])
     return {"ok": True, "messaggio": "Richiesta annullata. Il tuo account resta attivo."}
 
 
@@ -258,16 +258,24 @@ async def annulla_cancellazione(request: Request):
 async def stato_cancellazione(request: Request):
     """Stato attuale della richiesta di cancellazione dell'utente loggato."""
     user = await get_current_user(request)
+    user_oid = ObjectId(user["id"])
     doc = await db.richieste_cancellazione.find_one(
-        {"user_id": ObjectId(user["_id"]), "stato": "pending"}
+        {"user_id": user_oid, "stato": "pending"}
     )
     if not doc:
         return {"pending": False}
+    # MongoDB restituisce datetime naive: rendo entrambi tz-aware per il diff
+    esec = doc["esecuzione_prevista"]
+    if esec.tzinfo is None:
+        esec = esec.replace(tzinfo=timezone.utc)
+    richiesta = doc["richiesta_il"]
+    if richiesta.tzinfo is None:
+        richiesta = richiesta.replace(tzinfo=timezone.utc)
     return {
         "pending": True,
-        "richiesta_il": doc["richiesta_il"].isoformat(),
-        "esecuzione_prevista": doc["esecuzione_prevista"].isoformat(),
-        "giorni_residui": (doc["esecuzione_prevista"] - datetime.now(timezone.utc)).days,
+        "richiesta_il": richiesta.isoformat(),
+        "esecuzione_prevista": esec.isoformat(),
+        "giorni_residui": (esec - datetime.now(timezone.utc)).days,
     }
 
 
