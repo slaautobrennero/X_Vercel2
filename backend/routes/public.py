@@ -6,9 +6,9 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-APP_VERSION = "0.12.0-beta"
+APP_VERSION = "0.13.0-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "Privacy & Legal Compliance (GDPR)"
+APP_RELEASE_NAME = "SuperAdmin Settings & GDPR UI"
 
 
 @router.get("/health")

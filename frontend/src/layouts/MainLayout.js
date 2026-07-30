@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, hasAnyRole, hasRole } from '../lib/utils';
 import ContattiSidebar from '../components/ContattiSidebar';
@@ -17,8 +18,13 @@ import {
   User,
   Settings,
   BarChart3,
-  History
+  History,
+  ShieldCheck,
+  X as CloseIcon,
+  Info,
 } from 'lucide-react';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function MainLayout() {
   const { user, logout } = useAuth();
@@ -26,16 +32,34 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [nuoviDocs, setNuoviDocs] = useState([]);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
+  // v0.13.0: notifica non bloccante nuovi documenti legali
+  useEffect(() => {
+    if (!user) return;
+    axios.get(`${API}/gdpr/nuovi-documenti`)
+      .then((res) => setNuoviDocs(res.data?.nuovi || []))
+      .catch(() => setNuoviDocs([]));
+  }, [user]);
+
+  const dismissBanner = async () => {
+    setBannerDismissed(true);
+    try {
+      await axios.post(`${API}/gdpr/marca-documenti-visti`);
+    } catch (_) {}
+  };
+
   const canAccessRimborsi = hasAnyRole(user, ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser']);
   const canManageUsers = hasAnyRole(user, ['segretario', 'admin', 'superadmin', 'superuser']);
   const canManageSedi = hasRole(user, 'superadmin');
   const canManageMotivi = hasRole(user, 'superadmin');
+  const canManageImpostazioni = hasRole(user, 'superadmin');
   const canViewReports = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']);
   const canViewAuditLog = hasAnyRole(user, ['admin', 'cassiere', 'segretario', 'superadmin', 'superuser']);
 
@@ -50,6 +74,7 @@ export default function MainLayout() {
     { path: '/audit-log', label: 'Audit Log', icon: History, show: canViewAuditLog },
     { path: '/sedi', label: 'Sedi', icon: Building2, show: canManageSedi },
     { path: '/motivi-rimborso', label: 'Motivi Rimborso', icon: Settings, show: canManageMotivi },
+    { path: '/impostazioni-sindacato', label: 'Impostazioni Sindacato', icon: ShieldCheck, show: canManageImpostazioni },
   ];
 
   return (
@@ -212,6 +237,34 @@ export default function MainLayout() {
 
         {/* Page content */}
         <main className="p-4 sm:p-6 lg:p-8">
+          {/* v0.13.0: banner non bloccante nuovi documenti legali */}
+          {nuoviDocs.length > 0 && !bannerDismissed && (
+            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-3" data-testid="nuovi-docs-banner">
+              <Info size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 text-sm">
+                <div className="font-medium text-blue-900">Documenti legali aggiornati</div>
+                <div className="text-blue-800 text-xs mt-0.5">
+                  Sono state pubblicate nuove versioni di:{' '}
+                  {nuoviDocs.map((d, i) => (
+                    <span key={d.tipo}>
+                      <Link to={`/${d.tipo === 'cookie' ? 'cookie-policy' : d.tipo}`} className="underline font-medium">
+                        {d.tipo === 'privacy' ? 'Informativa Privacy' : d.tipo === 'cookie' ? 'Cookie Policy' : 'Termini di Servizio'}
+                      </Link>
+                      {' '}(v{d.version_corrente}){i < nuoviDocs.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={dismissBanner}
+                className="text-blue-600 hover:text-blue-800 p-1"
+                data-testid="dismiss-docs-banner-btn"
+                title="Ho letto"
+              >
+                <CloseIcon size={16} />
+              </button>
+            </div>
+          )}
           <Outlet />
         </main>
 

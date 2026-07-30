@@ -9,6 +9,6 @@
  * Visibile in basso a destra in ogni pagina (componente VersionBadge).
  * Letto anche dal backend tramite GET /api/version per verifica incrociata.
  */
-export const APP_VERSION = '0.12.0-beta';
+export const APP_VERSION = '0.13.0-beta';
 export const BUILD_DATE = '2026-02-15';
-export const RELEASE_NAME = 'Privacy & Legal Compliance (GDPR)';
+export const RELEASE_NAME = 'SuperAdmin Settings & GDPR UI';

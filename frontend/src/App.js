@@ -50,6 +50,7 @@ import SediPage from './pages/SediPage';
 import ProfiloPage from './pages/ProfiloPage';
 import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
+import ImpostazioniSindacatoPage from './pages/ImpostazioniSindacatoPage';
 import { PrivacyPage, CookiePolicyPage, TerminiPage } from './pages/LegalPage';
 
 // Layout - Layout principale con sidebar
@@ -171,6 +172,11 @@ function AppRoutes() {
         <Route path="report" element={
           <ProtectedRoute allowedRoles={['admin', 'cassiere', 'superadmin', 'superuser']}>
             <ReportPage />
+          </ProtectedRoute>
+        } />
+        <Route path="impostazioni-sindacato" element={
+          <ProtectedRoute allowedRoles={['superadmin']}>
+            <ImpostazioniSindacatoPage />
           </ProtectedRoute>
         } />
         <Route path="profilo" element={<ProfiloPage />} />

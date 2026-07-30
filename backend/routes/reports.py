@@ -68,6 +68,20 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
         rimborso_user = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])})
         motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso["motivo_id"])}) if rimborso.get("motivo_id") else None
 
+        # v0.13.0: data di inserimento approvazione con fallback su updated_at
+        # per rimborsi storici approvati prima del rilascio del campo dedicato.
+        stato_r = rimborso.get("stato", "")
+        approvato_il_raw = rimborso.get("approvato_il")
+        if not approvato_il_raw and stato_r in ("approvato", "pagato"):
+            approvato_il_raw = rimborso.get("updated_at")
+        data_approvazione = ""
+        if approvato_il_raw:
+            try:
+                dt = datetime.fromisoformat(str(approvato_il_raw).replace("Z", "+00:00"))
+                data_approvazione = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                data_approvazione = str(approvato_il_raw)[:16]
+
         rimborsi.append({
             "Data": rimborso["data"],
             "Utente": f"{rimborso_user['nome']} {rimborso_user['cognome']}" if rimborso_user else "N/A",
@@ -82,6 +96,7 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
             "Autostrada": f"{rimborso.get('costo_autostrada', 0):.2f}",
             "Totale": f"{rimborso['importo_totale']:.2f}",
             "Stato": rimborso["stato"],
+            "Data Approvazione": data_approvazione,
             "Note": rimborso.get("note", ""),
         })
 
@@ -108,7 +123,7 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
 
         headers = list(rimborsi[0].keys()) if rimborsi else [
             "Data", "Utente", "Email", "IBAN", "Motivo", "Partenza", "Arrivo",
-            "KM Totali", "Importo KM", "Importo Pasti", "Autostrada", "Totale", "Stato", "Note",
+            "KM Totali", "Importo KM", "Importo Pasti", "Autostrada", "Totale", "Stato", "Data Approvazione", "Note",
         ]
 
         header_font = Font(bold=True, color="FFFFFF")
@@ -181,7 +196,7 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
         ))
         elements.append(Spacer(1, 8*mm))
 
-        pdf_headers = ["Data", "Utente", "Motivo", "KM", "Importo €", "Stato"]
+        pdf_headers = ["Data", "Utente", "Motivo", "KM", "Importo €", "Stato", "Approvato il"]
         data = [pdf_headers]
         total = 0.0
         for r in rimborsi:
@@ -192,13 +207,14 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
                 str(r["KM Totali"]),
                 r["Totale"],
                 r["Stato"].upper(),
+                r["Data Approvazione"] or "-",
             ])
             try:
                 total += float(r["Totale"])
             except (ValueError, TypeError):
                 pass
 
-        data.append(["", "", "", "TOTALE", f"{total:.2f}", ""])
+        data.append(["", "", "", "TOTALE", f"{total:.2f}", "", ""])
 
         table = Table(data, repeatRows=1)
         table.setStyle(TableStyle([

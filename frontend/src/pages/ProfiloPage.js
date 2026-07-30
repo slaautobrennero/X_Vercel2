@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, RUOLO_BADGE_COLOR, hasAnyRole } from '../lib/utils';
 import TwoFactorSection from '../components/TwoFactorSection';
+import PrivacyDatiSection from '../components/PrivacyDatiSection';
 import axios from 'axios';
 import { User, Mail, Phone, MapPin, CreditCard, Save, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -349,6 +350,9 @@ export default function ProfiloPage() {
       {hasAnyRole(user, ['admin', 'superadmin']) && (
         <TwoFactorSection user={user} onUpdate={updateUser} />
       )}
+
+      {/* Sezione GDPR: Privacy & I miei dati (per tutti gli utenti autenticati) */}
+      <PrivacyDatiSection />
     </div>
   );
 }

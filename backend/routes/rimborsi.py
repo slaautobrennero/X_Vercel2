@@ -402,7 +402,15 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     if not update_data:
         raise HTTPException(status_code=400, detail="Nessun dato da aggiornare")
 
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_data["updated_at"] = now_iso
+
+    # v0.13.0: timestamp di inserimento approvazione (per tracciabilità nei report)
+    # Popolato SOLO alla transizione verso "approvato" (non su re-save o altri stati)
+    if rimborso_data.stato == "approvato" and rimborso.get("stato") != "approvato":
+        update_data["approvato_il"] = now_iso
+        update_data["approvato_da"] = user["id"]
+        update_data["approvato_da_nome"] = f"{user.get('nome', '')} {user.get('cognome', '')}".strip()
 
     await db.rimborsi.update_one({"_id": ObjectId(rimborso_id)}, {"$set": update_data})
 

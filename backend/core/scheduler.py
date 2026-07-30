@@ -135,6 +135,78 @@ async def _check_pending_reimbursements() -> dict:
     return risultato
 
 
+async def _check_cancellazioni_gdpr() -> dict:
+    """
+    Gestione automatica cancellazioni GDPR (v0.13.0):
+    - stato "pending" + esecuzione_prevista scaduta  → disabilita account (stato "disabilitato")
+    - stato "disabilitato" + anonimizzazione_prevista scaduta → anonimizza dati anagrafici
+      (i rimborsi contabili restano per obbligo fiscale, il campo user_id resta valorizzato
+       ma i nomi/email vengono sostituiti da placeholder)
+    """
+    now = datetime.now(timezone.utc)
+    stats = {"disabilitati": 0, "anonimizzati": 0}
+
+    # 1) PENDING → DISABILITATO (dopo 30 gg dalla richiesta)
+    async for req in db.richieste_cancellazione.find({"stato": "pending"}):
+        esec = req.get("esecuzione_prevista")
+        if not esec:
+            continue
+        if esec.tzinfo is None:
+            esec = esec.replace(tzinfo=timezone.utc)
+        if now >= esec:
+            await db.users.update_one(
+                {"_id": req["user_id"]},
+                {"$set": {
+                    "disabled": True,
+                    "disabled_at": now.isoformat(),
+                    "disabled_by": "gdpr_auto",
+                    "disabled_reason": "Richiesta cancellazione GDPR",
+                }},
+            )
+            await db.richieste_cancellazione.update_one(
+                {"_id": req["_id"]},
+                {"$set": {"stato": "disabilitato", "disabilitato_il": now}},
+            )
+            stats["disabilitati"] += 1
+            logger.info(f"GDPR: utente {req.get('email')} disabilitato (richiesta cancellazione)")
+
+    # 2) DISABILITATO → ANONIMIZZATO (dopo 31/03 anno successivo, per obbligo contabile)
+    async for req in db.richieste_cancellazione.find({"stato": "disabilitato"}):
+        anon = req.get("anonimizzazione_prevista")
+        if not anon:
+            continue
+        if anon.tzinfo is None:
+            anon = anon.replace(tzinfo=timezone.utc)
+        if now >= anon:
+            uid = req["user_id"]
+            placeholder_email = f"cancellato_{str(uid)[-8:]}@sla.deleted"
+            await db.users.update_one(
+                {"_id": uid},
+                {"$set": {
+                    "email": placeholder_email,
+                    "nome": "Utente",
+                    "cognome": "Cancellato",
+                    "telefono": None,
+                    "indirizzo": None,
+                    "citta": None,
+                    "cap": None,
+                    "iban": None,
+                    "totp_secret": None,
+                    "totp_enabled": False,
+                    "anonymized": True,
+                    "anonymized_at": now.isoformat(),
+                }},
+            )
+            await db.richieste_cancellazione.update_one(
+                {"_id": req["_id"]},
+                {"$set": {"stato": "anonimizzato", "anonimizzato_il": now}},
+            )
+            stats["anonimizzati"] += 1
+            logger.info(f"GDPR: utente {uid} anonimizzato (dati anagrafici rimossi, rimborsi contabili conservati)")
+
+    return stats
+
+
 async def _pending_reimbursements_scheduler():
     """
     Loop infinito: ogni 60 minuti controlla se è ora di lanciare il check.
@@ -161,6 +233,14 @@ async def _pending_reimbursements_scheduler():
                         logger.info(f"Scheduler: completato - {result}")
                     except Exception as e:
                         logger.error(f"Scheduler errore: {e}")
+
+                    # v0.13.0: check cancellazioni GDPR (disabilita/anonimizza)
+                    try:
+                        gdpr_result = await _check_cancellazioni_gdpr()
+                        if gdpr_result["disabilitati"] or gdpr_result["anonimizzati"]:
+                            logger.info(f"Scheduler GDPR: {gdpr_result}")
+                    except Exception as e:
+                        logger.error(f"Scheduler GDPR errore: {e}")
 
                     await db.system_jobs.update_one(
                         {"_id": "pending_reimbursements"},

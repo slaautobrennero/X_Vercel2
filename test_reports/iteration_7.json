@@ -1,0 +1,26 @@
+{
+  "summary": "v0.13.0-beta 'SuperAdmin Settings & GDPR UI' testing complete. Created /app/backend/tests/test_v0130_superadmin_gdpr.py with 24 tests covering: Impostazioni Sindacato (GET/PUT+RBAC), Documenti Legali (anteprima, PUT with auto-increment version 1.0→1.1, custom=true propagation, 404 on invalid tipo, 403 non-superadmin), Registro Trattamenti (list + export CSV/XLSX/PDF + invalid format 400), GDPR self-service (my-data, export-zip with dati.json+README.txt, richiedi/annulla-cancellazione lifecycle with anonimizzazione 31/03 anno successivo, doppia richiesta 400), Notifica non bloccante (nuovi-documenti / marca-documenti-visti), Approvazione rimborso (approvato_il/approvato_da persistiti in DB), Report export (colonna 'Data Approvazione' in CSV/XLSX headers + populated for approved). Result: 24/24 PASSED. Also ran Playwright UI test as superadmin: /impostazioni-sindacato loads con 3 tab funzionanti, save-dati-btn/doc-textarea/preview-btn/preview-modal/save-doc-btn/export-registro-{csv,xlsx,pdf}-btn tutti visibili e clickabili, sezione PrivacyDatiSection su /profilo con download-json-btn/download-zip-btn/richiedi-cancellazione-btn + cancel-modal aprono correttamente. v0.13.0-beta è pronto per il deploy.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_v0130_superadmin_gdpr.py",
+    "/app/test_reports/pytest/v0130_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Auto-increment versione (major.minor.split -> minor+1) è robusto per pattern 'X.Y' ma se qualcuno inserisce manualmente '1.10.2' il parsing rompe e cade nel fallback '.1'; considerare packaging.version per semver rigoroso.",
+    "Documento legale storico (documenti_legali_storico) usa ObjectId() come _id: OK ma nessun indice su tipo/version, che nel tempo potrebbe rallentare lookup storici; aggiungere db.documenti_legali_storico.create_index([('tipo',1),('version',1)]).",
+    "export-zip streamma tutto il contenuto in memoria via iter([buf.getvalue()]) — per utenti con molti allegati può essere problematico; per ora accettabile ma valutare streaming a chunk se ricevute >50MB.",
+    "reports.py fallback approvato_il su updated_at può falsare la data di approvazione per rimborsi che sono stati editati dopo l'approvazione. Va bene come backfill per lo storico, ma il main agent potrebbe voler dare istruzione una tantum per popolare approvato_il dai record esistenti."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v0130_superadmin_gdpr.py (new)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% - all data-testid selectors present and interactive"},
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024! (da /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test user test_gdpr_v0130_<hex>@example.com creato via /api/auth/register e ripulito dal teardown fixture. Un rimborso è stato creato/riutilizzato e portato a stato 'approvato' per verificare il timestamp e la colonna nel report — resta in DB come dato di test valido.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v0.13.0-beta è green a livello di API + UI wiring. Per future modifiche a routes/gdpr.py o reports.py, rieseguire: python -m pytest /app/backend/tests/test_v0130_superadmin_gdpr.py -v. La suite v0.12.0 (test_gdpr_v012.py 20/20) continua a passare in regressione. Il test test_cancellazione_lifecycle_with_anonimizzazione verifica esplicitamente anno=oggi+1 mese=3 giorno=31 come richiesto dai requisiti.",
+  "rca of the issue": "n/a — nessun bug trovato in v0.13.0-beta"
+}
