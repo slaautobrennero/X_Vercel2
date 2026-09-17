@@ -25,7 +25,7 @@ async def calcola_km(data: CalcoloKmRequest, request: Request, response: Respons
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(
+            r = await client.get(
                 "https://maps.googleapis.com/maps/api/directions/json",
                 params={
                     "origin": data.origine,
@@ -34,7 +34,7 @@ async def calcola_km(data: CalcoloKmRequest, request: Request, response: Respons
                     "language": "it",
                 },
             )
-            result = response.json()
+            result = r.json()
 
             if result.get("status") != "OK":
                 raise HTTPException(status_code=400, detail=f"Impossibile calcolare il percorso: {result.get('status')}")
