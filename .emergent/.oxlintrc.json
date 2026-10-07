@@ -1,0 +1,5 @@
+{
+  "rules": {
+    "ephemeral-upload-storage": "off"
+  }
+}

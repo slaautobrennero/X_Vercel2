@@ -1,0 +1,31 @@
+{
+  "summary": "v0.14.0-beta 'Sede Nazionale' testing complete. Creato /app/backend/tests/test_v0140_sede_nazionale.py con 21 test che coprono: GET /api/version=0.14.0-beta + release_name 'Sede Nazionale'; GET /api/sedi espone is_nazionale; POST /api/sedi (409 duplicato codice, 403 non-superadmin); POST /api/sedi/{id}/marca-nazionale (solo superadmin, esclusività — mark loc smarca naz, cache invalidation funzionante perché naz_admin perde is_nazionale_member se smarcato); DELETE sede nazionale bloccato con 400; PUT /api/sedi RBAC (local admin NON può modificare naz, naz admin PUÒ); GET /api/auth/me espone is_nazionale_member True/False correttamente; Annunci: broadcast automatico da admin del Nazionale (sede_id=None, broadcast_nazionale=True), solo_nazionale=true scoperizza alla sede naz, admin locale non broadcasta; Documenti: stesso pattern + admin del Nazionale legge documenti di altre sedi (is_naz_reader); Rimborsi: naz admin legge rimborsi cross-sede filtrando sede_id; Reports: naz admin accede a /reports/rimborsi-annuali con filtro sede_id, export CSV OK, local admin con sede_id=naz non vede dati altre sedi (query auto-scope-ata). Risultato: 21/21 PASSED. Regressione v0.13.0: 23/24 PASSED (unico fallimento è test_version_bumped che hardcode '0.13.0-beta', atteso dopo bump versione). UI smoke superadmin: /sedi mostra marca-nazionale-* btn, /bacheca mostra badge-naz-annuncio-*, /documenti mostra badge-naz-doc-*, /report mostra sede-filter con opzioni popolate. v0.14.0-beta è pronto per rilascio.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_v0140_sede_nazionale.py",
+    "/app/test_reports/pytest/v0140_results.xml"
+  ],
+  "action_items": [
+    "(opzionale) aggiornare l'hardcode '0.13.0-beta' in /app/backend/tests/test_v0130_superadmin_gdpr.py::TestVersion::test_version_bumped → '0.14.0-beta' (o fare assert sul prefisso).",
+    "(opzionale) il test file v0.13.0 potrebbe assertare `d['version'].startswith('0.1')` per evitare regressioni future ad ogni bump."
+  ],
+  "critical_code_review_comments": [
+    "core/roles.py — _SEDE_NAZIONALE_CACHE è una cache globale in-memory per processo. In deploy con più worker uvicorn/gunicorn l'invalidation di un worker NON si propaga agli altri: potenzialmente, dopo marca-nazionale, worker diversi vedranno stati diversi finché non riavviati. Per il contesto single-worker attuale va bene, ma documentare o passare a cache per-request/TTL se si scala.",
+    "routes/sedi.py update_sede: se un segretario del Nazionale prova a modificare la sede nazionale PASSA (il controllo è `admin or segretario`); se un segretario di una sede NON-nazionale prova a modificare la propria sede FALLISCE con 403 ('Serve ruolo admin per questa sede'). Comportamento voluto? Il PRD dice 'Admin/Segretario del Nazionale' → OK, ma segretario di sede locale perde ogni capacità editing — verificare che sia la regola business attesa.",
+    "routes/documenti.py get_documenti: naz-reader vede tutti i documenti, ma il filtro `categoria` resta applicato — OK; mancano però test per il caso in cui un documento è `solo_nazionale` ma un segretario di sede locale (non-naz-reader) non deve vederlo. Il filtro query $or copre il caso perché sede_id==naz_id e != user.sede_id → escluso. Verificato implicitamente ma non con un test dedicato.",
+    "routes/annunci.py download_allegato: naz-reader NON ha corsia preferenziale come su documenti.py — un segretario del Nazionale che vede un annuncio broadcast ne può scaricare l'allegato (perché sede_id è None); se però un annuncio solo_nazionale fosse postato da sede diversa, naz-reader di quella sede diversa sarebbe comunque autorizzato. Il flusso attuale è coerente; segnalo solo l'asimmetria rispetto a documenti.py se un giorno si volesse uniformare.",
+    "Nessun indice MongoDB su `sedi.is_nazionale` — ok per dataset piccolo (pochi record di sedi) ma `db.sedi.find_one({'is_nazionale': True})` fa collscan ad ogni invalidazione cache. Aggiungere `db.sedi.create_index([('is_nazionale', 1)], partialFilterExpression={'is_nazionale': True})` è trascurabile ma pulito.",
+    "routes/sedi.py marca_sede_nazionale: non registra audit log della transizione. Trattandosi di cambio di gerarchia con impatto RBAC cross-sede, è consigliabile loggarlo (actor + sede target + sede smarcata)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v0140_sede_nazionale.py (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21 nuovi), 95.8% regressione v0.13 (23/24 — fallimento previsto per hardcode versione)", "frontend": "smoke OK — tutti i data-testid v0.14 visibili (marca-nazionale-*, badge-nazionale-*, badge-naz-annuncio-*, badge-naz-doc-*, sede-filter, annuncio-solo-nazionale-cb, documento-solo-nazionale-cb)"},
+  "test_credentials": "SuperAdmin: superadmin@sla.it / SlaAdmin2024!",
+  "seed_data_creation": "Fixture crea 2 sedi TEST_NAZ_* / TEST_LOC_* + 3 utenti test (naz_admin, local_admin, iscritto_loc). Tutte ripulite da teardown. Annunci/documenti creati dai test sono stati ripuliti manualmente post-run con delete_many({'titolo': /^TEST_/}) e docs analoghi (3 annunci + 2 doc rimossi). TODO opzionale: aggiungere teardown dedicato alle classi TestAnnunciNazionale/TestDocumentiNazionale.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v0.14.0-beta è green. Per regressioni successive: pytest /app/backend/tests/test_v0140_sede_nazionale.py. Prestare attenzione a: (1) la cache _SEDE_NAZIONALE_CACHE in core/roles.py va invalidata chiamando marca-nazionale via API (NON scrivendo direttamente in DB), altrimenti i test successivi vedono stato stale; (2) i test di visibilità cross-sede (naz admin → vede altre sedi) richiedono che l'utente abbia ruolo admin/segretario/cassiere + sede_id==naz_id — la fixture naz_admin gestisce entrambi; (3) /api/auth/me ora chiama is_sede_nazionale_member ad ogni richiesta, incluso un lookup DB al primo caricamento della cache per processo.",
+  "rca of the issue": "n/a — nessun bug trovato in v0.14.0-beta"
+}
