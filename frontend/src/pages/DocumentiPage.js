@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
-import { FileText, Plus, Download, Trash2, Upload, X, FolderOpen } from 'lucide-react';
+import { FileText, Plus, Download, Trash2, Upload, X, FolderOpen, Landmark } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,11 +12,12 @@ export default function DocumentiPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedCategoria, setSelectedCategoria] = useState('');
-  const [formData, setFormData] = useState({ nome: '', categoria: 'modulistica', descrizione: '' });
+  const [formData, setFormData] = useState({ nome: '', categoria: 'modulistica', descrizione: '', solo_nazionale: false });
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const canUpload = hasAnyRole(user, ['segreteria', 'segretario', 'admin', 'superadmin']);
+  const isNazionale = !!user?.is_nazionale_member;
 
   const categorie = [
     { value: 'modulistica', label: 'Modulistica' },
@@ -53,13 +54,16 @@ export default function DocumentiPage() {
       data.append('nome', formData.nome);
       data.append('categoria', formData.categoria);
       data.append('descrizione', formData.descrizione || '');
+      if (isNazionale) {
+        data.append('solo_nazionale', formData.solo_nazionale ? 'true' : 'false');
+      }
       
       await axios.post(`${API}/documenti`, data, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       
       setShowModal(false);
-      setFormData({ nome: '', categoria: 'modulistica', descrizione: '' });
+      setFormData({ nome: '', categoria: 'modulistica', descrizione: '', solo_nazionale: false });
       setFile(null);
       fetchDocumenti();
     } catch (error) {
@@ -168,7 +172,14 @@ export default function DocumentiPage() {
                   <FileText size={20} className="text-[#1E4D8C]" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-gray-900 truncate">{doc.nome}</h3>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="font-medium text-gray-900 truncate">{doc.nome}</h3>
+                    {doc.broadcast_nazionale && (
+                      <span className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-800 text-[10px] font-medium px-1.5 py-0.5 rounded" data-testid={`badge-naz-doc-${doc.id}`}>
+                        <Landmark size={10} /> Naz.
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-500 capitalize">{doc.categoria}</p>
                   {doc.descrizione && (
                     <p className="text-sm text-gray-600 mt-1 line-clamp-2">{doc.descrizione}</p>
@@ -245,6 +256,30 @@ export default function DocumentiPage() {
                   data-testid="documento-descrizione-input"
                 />
               </div>
+
+              {isNazionale && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+                  <Landmark size={16} className="text-amber-700 flex-shrink-0 mt-0.5" />
+                  <label className="flex items-start gap-2 cursor-pointer flex-1">
+                    <input
+                      type="checkbox"
+                      checked={formData.solo_nazionale}
+                      onChange={(e) => setFormData(prev => ({ ...prev, solo_nazionale: e.target.checked }))}
+                      className="mt-0.5"
+                      data-testid="documento-solo-nazionale-cb"
+                    />
+                    <div className="text-sm">
+                      <div className="font-medium text-amber-900">Pubblica solo per membri del Nazionale</div>
+                      <div className="text-xs text-amber-800">
+                        {formData.solo_nazionale
+                          ? 'Solo gli iscritti alla sede Nazionale potranno scaricare questo documento.'
+                          : 'Default: documento visibile a TUTTE le sedi/concessionarie.'}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">File *</label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#1E4D8C] transition-colors">

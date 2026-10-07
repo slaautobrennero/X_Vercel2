@@ -197,9 +197,12 @@ async def logout(response: Response):
 
 @router.get("/auth/me")
 async def get_me(request: Request):
+    from core.roles import is_sede_nazionale_member
     user = await get_current_user(request)
     user["totp_enabled"] = bool(user.get("totp_enabled"))
     user.pop("totp_secret", None)
+    # v0.14.0: espone appartenenza sede nazionale per gating UI
+    user["is_nazionale_member"] = await is_sede_nazionale_member(user)
     return user
 
 

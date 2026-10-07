@@ -69,9 +69,9 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.13.0-beta"
+APP_VERSION = "0.14.0-beta"
 APP_BUILD_DATE = "2026-02-15"
-APP_RELEASE_NAME = "SuperAdmin Settings & GDPR UI"
+APP_RELEASE_NAME = "Sede Nazionale"
 
 app = FastAPI(
     title="SLA Sindacato - Portale Rimborsi",

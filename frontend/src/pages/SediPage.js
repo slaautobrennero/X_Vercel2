@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatCurrency } from '../lib/utils';
 import axios from 'axios';
-import { Building2, Plus, Edit, Trash2, X, Settings } from 'lucide-react';
+import { Building2, Plus, Edit, Trash2, X, Settings, Landmark } from 'lucide-react';
+import { hasRole } from '../lib/utils';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -88,6 +89,23 @@ export default function SediPage() {
     }
   };
 
+  const handleMarcaNazionale = async (sede) => {
+    const confirmed = window.confirm(
+      `Vuoi marcare "${sede.nome}" come Sede Nazionale?\n\n` +
+      `• I suoi annunci/documenti saranno visibili a TUTTE le sedi\n` +
+      `• Admin/Segretario/Cassiere di questa sede vedranno la contabilità di tutte le sedi (in sola lettura)\n` +
+      `• Admin/Segretario di questa sede vedranno tutti i documenti di tutte le sedi\n\n` +
+      `Se esiste già una sede nazionale, verrà smarcata automaticamente.`
+    );
+    if (!confirmed) return;
+    try {
+      await axios.post(`${API}/sedi/${sede.id}/marca-nazionale`);
+      fetchSedi();
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Errore');
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       nome: '',
@@ -133,13 +151,30 @@ export default function SediPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sedi.map(sede => (
-            <div key={sede.id} className="bg-white border border-gray-200 rounded-lg p-6" data-testid={`sede-card-${sede.id}`}>
+            <div key={sede.id} className={`bg-white border rounded-lg p-6 ${sede.is_nazionale ? 'border-amber-400 ring-2 ring-amber-100' : 'border-gray-200'}`} data-testid={`sede-card-${sede.id}`}>
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{sede.nome}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">{sede.nome}</h3>
+                    {sede.is_nazionale && (
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded" data-testid={`badge-nazionale-${sede.id}`}>
+                        <Landmark size={12} /> Nazionale
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-[#1E4D8C] font-medium">{sede.codice}</p>
                 </div>
                 <div className="flex gap-1">
+                  {hasRole(user, 'superadmin') && !sede.is_nazionale && (
+                    <button
+                      onClick={() => handleMarcaNazionale(sede)}
+                      className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                      title="Marca come Nazionale"
+                      data-testid={`marca-nazionale-${sede.id}`}
+                    >
+                      <Landmark size={16} />
+                    </button>
+                  )}
                   <button
                     onClick={() => handleEdit(sede)}
                     className="p-2 text-gray-400 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"

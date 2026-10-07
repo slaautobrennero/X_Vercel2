@@ -15,7 +15,12 @@ from core.auth import get_current_user
 from core.config import UPLOAD_DIR
 from core.db import db
 from core.notifications import _notify_all_in_sede
-from core.roles import user_has_any_role, user_has_role
+from core.roles import (
+    get_sede_nazionale_id,
+    is_sede_nazionale_member,
+    user_has_any_role,
+    user_has_role,
+)
 
 router = APIRouter()
 
@@ -46,6 +51,7 @@ async def create_annuncio(
     titolo: str = Form(...),
     contenuto: str = Form(...),
     link_documento: Optional[str] = Form(None),
+    solo_nazionale: Optional[bool] = Form(False),
     file: Optional[UploadFile] = File(None),
 ):
     user = await get_current_user(request)
@@ -75,15 +81,36 @@ async def create_annuncio(
         allegato_filename = file.filename
         allegato_path = stored_name
 
+    # v0.14.0: Sede Nazionale — broadcast automatico se autore è del Nazionale
+    # (a meno che non spunti "solo_nazionale" per limitare visibilità ai membri Nazionale).
+    is_naz = await is_sede_nazionale_member(user, roles=["admin", "segretario", "segreteria"])
+    sede_nazionale_id = await get_sede_nazionale_id()
+
+    if user_has_role(user, "superadmin"):
+        target_sede_id = None  # broadcast globale
+        broadcast_nazionale = True
+    elif is_naz:
+        if solo_nazionale:
+            target_sede_id = sede_nazionale_id  # solo membri Nazionale
+            broadcast_nazionale = False
+        else:
+            target_sede_id = None  # broadcast a tutte le sedi
+            broadcast_nazionale = True
+    else:
+        target_sede_id = user.get("sede_id")  # sede locale
+        broadcast_nazionale = False
+
     annuncio_doc = {
         "titolo": titolo,
         "contenuto": contenuto,
         "link_documento": link_documento if link_documento else None,
         "allegato_filename": allegato_filename,
         "allegato_path": allegato_path,
-        "sede_id": user.get("sede_id") if not user_has_role(user, "superadmin") else None,
+        "sede_id": target_sede_id,
+        "broadcast_nazionale": broadcast_nazionale,
         "autore_id": user["id"],
         "autore_nome": f"{user['nome']} {user['cognome']}",
+        "autore_sede_id": user.get("sede_id"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 

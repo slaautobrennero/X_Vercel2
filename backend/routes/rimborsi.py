@@ -16,7 +16,7 @@ from core.auth import get_current_user
 from core.config import UPLOAD_DIR
 from core.db import db
 from core.notifications import _notify_user, _notify_users_by_role
-from core.roles import user_has_any_role
+from core.roles import is_sede_nazionale_member, user_has_any_role
 from models_api import RimborsoCreate, RimborsoUpdate
 
 router = APIRouter()
@@ -39,8 +39,11 @@ async def get_rimborsi(
 
     query: dict = {}
 
-    # Scope: superadmin/superuser → tutti; admin/cassiere → sede; altri → solo i propri
-    if not user_has_any_role(user, ["superadmin", "superuser"]):
+    # v0.14.0: admin/segretario/cassiere del Nazionale → lettura cross-sede (read-only)
+    is_naz_reader = await is_sede_nazionale_member(user, roles=["admin", "segretario", "cassiere"])
+
+    # Scope: superadmin/superuser/naz-reader → tutti; admin/cassiere → sede; altri → solo i propri
+    if not user_has_any_role(user, ["superadmin", "superuser"]) and not is_naz_reader:
         if user_has_any_role(user, ["admin", "cassiere"]):
             query["sede_id"] = user.get("sede_id")
         else:
@@ -59,10 +62,10 @@ async def get_rimborsi(
     elif anno:
         query["data"] = {"$regex": f"^{anno}"}
 
-    if user_id and user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
+    if user_id and (user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]) or is_naz_reader):
         query["user_id"] = user_id
 
-    if sede_id and user_has_any_role(user, ["superadmin", "superuser"]):
+    if sede_id and (user_has_any_role(user, ["superadmin", "superuser"]) or is_naz_reader):
         query["sede_id"] = sede_id
 
     if motivo_id:

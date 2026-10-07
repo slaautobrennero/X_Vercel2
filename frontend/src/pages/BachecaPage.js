@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, hasAnyRole } from '../lib/utils';
 import axios from 'axios';
-import { Megaphone, Plus, Trash2, Link as LinkIcon, X, Upload, Download, Paperclip } from 'lucide-react';
+import { Megaphone, Plus, Trash2, Link as LinkIcon, X, Upload, Download, Paperclip, Landmark } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -11,11 +11,12 @@ export default function BachecaPage() {
   const [annunci, setAnnunci] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ titolo: '', contenuto: '', link_documento: '' });
+  const [formData, setFormData] = useState({ titolo: '', contenuto: '', link_documento: '', solo_nazionale: false });
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const canPost = hasAnyRole(user, ['segreteria', 'segretario', 'admin', 'superadmin']);
+  const isNazionale = !!user?.is_nazionale_member;
 
   useEffect(() => {
     fetchAnnunci();
@@ -33,7 +34,7 @@ export default function BachecaPage() {
   };
 
   const resetForm = () => {
-    setFormData({ titolo: '', contenuto: '', link_documento: '' });
+    setFormData({ titolo: '', contenuto: '', link_documento: '', solo_nazionale: false });
     setFile(null);
   };
 
@@ -46,6 +47,9 @@ export default function BachecaPage() {
       data.append('contenuto', formData.contenuto);
       if (formData.link_documento) {
         data.append('link_documento', formData.link_documento);
+      }
+      if (isNazionale) {
+        data.append('solo_nazionale', formData.solo_nazionale ? 'true' : 'false');
       }
       if (file) {
         data.append('file', file);
@@ -133,7 +137,14 @@ export default function BachecaPage() {
             <div key={annuncio.id} className="bg-white border border-gray-200 rounded-lg p-6" data-testid={`annuncio-${annuncio.id}`}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h2 className="text-lg font-semibold text-gray-900">{annuncio.titolo}</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg font-semibold text-gray-900">{annuncio.titolo}</h2>
+                    {annuncio.broadcast_nazionale && (
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded" data-testid={`badge-naz-annuncio-${annuncio.id}`}>
+                        <Landmark size={12} /> Nazionale
+                      </span>
+                    )}
+                  </div>
                   <p className="text-gray-600 mt-2 whitespace-pre-wrap">{annuncio.contenuto}</p>
 
                   {/* Allegato file */}
@@ -263,6 +274,31 @@ export default function BachecaPage() {
                   data-testid="annuncio-link-input"
                 />
               </div>
+
+              {isNazionale && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+                  <Landmark size={16} className="text-amber-700 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.solo_nazionale}
+                        onChange={(e) => setFormData(prev => ({ ...prev, solo_nazionale: e.target.checked }))}
+                        className="mt-0.5"
+                        data-testid="annuncio-solo-nazionale-cb"
+                      />
+                      <div className="text-sm">
+                        <div className="font-medium text-amber-900">Pubblica solo per membri del Nazionale</div>
+                        <div className="text-xs text-amber-800">
+                          {formData.solo_nazionale
+                            ? 'Solo gli iscritti alla sede Nazionale vedranno questo annuncio.'
+                            : 'Default: broadcast a TUTTE le sedi/concessionarie (sei membro del Nazionale).'}
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"

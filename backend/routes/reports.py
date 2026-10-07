@@ -12,21 +12,27 @@ from fastapi.responses import StreamingResponse
 
 from core.auth import get_current_user
 from core.db import db
-from core.roles import user_has_any_role
+from core.roles import is_sede_nazionale_member, user_has_any_role
 
 router = APIRouter()
 
 
 @router.get("/reports/rimborsi-annuali")
-async def get_report_rimborsi_annuali(request: Request, anno: int):
+async def get_report_rimborsi_annuali(request: Request, anno: int, sede_id: str | None = None):
     user = await get_current_user(request)
 
-    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
+    # v0.14.0: admin/segretario/cassiere del Nazionale → lettura cross-sede
+    is_naz_reader = await is_sede_nazionale_member(user, roles=["admin", "segretario", "cassiere"])
+
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]) and not is_naz_reader:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
 
     query = {"data": {"$regex": f"^{anno}"}}
-    if not user_has_any_role(user, ["superadmin", "superuser"]):
+    if not user_has_any_role(user, ["superadmin", "superuser"]) and not is_naz_reader:
         query["sede_id"] = user.get("sede_id")
+    elif sede_id:
+        # SuperAdmin o Naz-reader possono filtrare per sede specifica
+        query["sede_id"] = sede_id
 
     pipeline = [
         {"$match": query},
@@ -47,21 +53,31 @@ async def get_report_rimborsi_annuali(request: Request, anno: int):
             result["user_nome"] = f"{user_doc['nome']} {user_doc['cognome']}"
             result["user_email"] = user_doc["email"]
             result["user_iban"] = user_doc.get("iban", "")
+            # v0.14.0: espone la sede per report cross-sede
+            if user_doc.get("sede_id"):
+                sede = await db.sedi.find_one({"_id": ObjectId(user_doc["sede_id"])})
+                result["sede_nome"] = sede["nome"] if sede else ""
+                result["sede_id"] = str(user_doc["sede_id"])
         results.append(result)
 
     return results
 
 
 @router.get("/reports/rimborsi-export")
-async def export_rimborsi(request: Request, anno: int, formato: str = "csv"):
+async def export_rimborsi(request: Request, anno: int, formato: str = "csv", sede_id: str | None = None):
     user = await get_current_user(request)
 
-    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]):
+    # v0.14.0: admin/segretario/cassiere del Nazionale → export cross-sede
+    is_naz_reader = await is_sede_nazionale_member(user, roles=["admin", "segretario", "cassiere"])
+
+    if not user_has_any_role(user, ["admin", "cassiere", "superadmin", "superuser"]) and not is_naz_reader:
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
 
     query = {"data": {"$regex": f"^{anno}"}}
-    if not user_has_any_role(user, ["superadmin", "superuser"]):
+    if not user_has_any_role(user, ["superadmin", "superuser"]) and not is_naz_reader:
         query["sede_id"] = user.get("sede_id")
+    elif sede_id:
+        query["sede_id"] = sede_id
 
     rimborsi = []
     async for rimborso in db.rimborsi.find(query).sort("data", 1):

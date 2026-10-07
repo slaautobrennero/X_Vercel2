@@ -9,6 +9,8 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export default function ReportPage() {
   const { user } = useAuth();
   const [anno, setAnno] = useState(new Date().getFullYear());
+  const [sedeFiltro, setSedeFiltro] = useState('');
+  const [sedi, setSedi] = useState([]);
   const [report, setReport] = useState([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -16,18 +18,26 @@ export default function ReportPage() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  const isAllowed = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']);
+  const isNazionaleReader = !!user?.is_nazionale_member && hasAnyRole(user, ['admin', 'segretario', 'cassiere']);
+  const isAllowed = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']) || isNazionaleReader;
+  const canFilterSede = hasAnyRole(user, ['superadmin', 'superuser']) || isNazionaleReader;
 
   useEffect(() => {
     if (isAllowed) {
       fetchReport();
     }
-  }, [anno, isAllowed]);
+    if (canFilterSede && sedi.length === 0) {
+      axios.get(`${API}/sedi`).then(r => setSedi(r.data)).catch(() => {});
+    }
+    // eslint-disable-next-line
+  }, [anno, sedeFiltro, isAllowed]);
 
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/reports/rimborsi-annuali?anno=${anno}`);
+      const params = new URLSearchParams({ anno: String(anno) });
+      if (sedeFiltro) params.append('sede_id', sedeFiltro);
+      const res = await axios.get(`${API}/reports/rimborsi-annuali?${params.toString()}`);
       setReport(res.data);
     } catch (error) {
       console.error('Error fetching report:', error);
@@ -39,7 +49,9 @@ export default function ReportPage() {
   const handleExport = async (formato = 'csv') => {
     setExporting(formato);
     try {
-      const response = await axios.get(`${API}/reports/rimborsi-export?anno=${anno}&formato=${formato}`, {
+      const params = new URLSearchParams({ anno: String(anno), formato });
+      if (sedeFiltro) params.append('sede_id', sedeFiltro);
+      const response = await axios.get(`${API}/reports/rimborsi-export?${params.toString()}`, {
         responseType: 'blob'
       });
       
@@ -82,9 +94,31 @@ export default function ReportPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 font-['Manrope']">Report Rimborsi</h1>
-          <p className="text-gray-600 mt-1">Rendiconto annuale rimborsi</p>
+          <p className="text-gray-600 mt-1">
+            Rendiconto annuale rimborsi
+            {isNazionaleReader && !hasAnyRole(user, ['superadmin', 'superuser']) && (
+              <span className="inline-flex items-center gap-1 ml-2 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded align-middle">
+                Nazionale — sola lettura
+              </span>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {canFilterSede && (
+            <select
+              value={sedeFiltro}
+              onChange={(e) => setSedeFiltro(e.target.value)}
+              className="border border-gray-300 rounded-md px-4 py-2 focus:border-[#1E4D8C] focus:ring-1 focus:ring-[#1E4D8C] outline-none"
+              data-testid="sede-filter"
+            >
+              <option value="">Tutte le sedi</option>
+              {sedi.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.nome}{s.is_nazionale ? ' 🏛️' : ''}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={anno}
             onChange={(e) => setAnno(parseInt(e.target.value))}
@@ -167,6 +201,7 @@ export default function ReportPage() {
                 <tr className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <th className="px-6 py-3">Utente</th>
                   <th className="px-6 py-3">Email</th>
+                  {canFilterSede && <th className="px-6 py-3">Sede</th>}
                   <th className="px-6 py-3 text-right">Rimborsi</th>
                   <th className="px-6 py-3 text-right">KM</th>
                   <th className="px-6 py-3 text-right">Importo Totale</th>
@@ -179,6 +214,7 @@ export default function ReportPage() {
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="px-6 py-4 font-medium text-gray-900">{r.user_nome || 'N/A'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{r.user_email || 'N/A'}</td>
+                    {canFilterSede && <td className="px-6 py-4 text-sm text-gray-700">{r.sede_nome || '-'}</td>}
                     <td className="px-6 py-4 text-right text-sm">{r.totale_rimborsi}</td>
                     <td className="px-6 py-4 text-right text-sm">{r.totale_km?.toLocaleString('it-IT')}</td>
                     <td className="px-6 py-4 text-right font-medium">{formatCurrency(r.totale_importo)}</td>
@@ -189,7 +225,7 @@ export default function ReportPage() {
               </tbody>
               <tfoot>
                 <tr className="bg-gray-50 font-semibold">
-                  <td className="px-6 py-3" colSpan="2">Totale</td>
+                  <td className="px-6 py-3" colSpan={canFilterSede ? "3" : "2"}>Totale</td>
                   <td className="px-6 py-3 text-right">{totals.rimborsi}</td>
                   <td className="px-6 py-3 text-right">{totals.km.toLocaleString('it-IT')}</td>
                   <td className="px-6 py-3 text-right text-[#1E4D8C]">{formatCurrency(totals.importo)}</td>

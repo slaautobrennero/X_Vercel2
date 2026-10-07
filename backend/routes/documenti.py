@@ -15,7 +15,12 @@ from core.auth import get_current_user
 from core.config import UPLOAD_DIR
 from core.db import db
 from core.notifications import _notify_all_in_sede
-from core.roles import user_has_any_role, user_has_role
+from core.roles import (
+    get_sede_nazionale_id,
+    is_sede_nazionale_member,
+    user_has_any_role,
+    user_has_role,
+)
 
 router = APIRouter()
 
@@ -24,8 +29,11 @@ router = APIRouter()
 async def get_documenti(request: Request, categoria: Optional[str] = None):
     user = await get_current_user(request)
 
+    # v0.14.0: admin/segretario del Nazionale vedono TUTTI i documenti (di tutte le sedi)
+    is_naz_reader = await is_sede_nazionale_member(user, roles=["admin", "segretario"])
+
     query = {}
-    if not user_has_any_role(user, ["superadmin", "superuser"]):
+    if not user_has_any_role(user, ["superadmin", "superuser"]) and not is_naz_reader:
         query["$or"] = [
             {"sede_id": user.get("sede_id")},
             {"sede_id": None},
@@ -50,6 +58,7 @@ async def upload_documento(
     nome: str = Form(...),
     categoria: str = Form(...),
     descrizione: str = Form(None),
+    solo_nazionale: Optional[bool] = Form(False),
 ):
     user = await get_current_user(request)
 
@@ -71,14 +80,29 @@ async def upload_documento(
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(content)
 
+    # v0.14.0: Sede Nazionale — stessa logica degli annunci
+    is_naz = await is_sede_nazionale_member(user, roles=["admin", "segretario", "segreteria"])
+    sede_nazionale_id = await get_sede_nazionale_id()
+    if user_has_role(user, "superadmin"):
+        target_sede_id = None
+        broadcast_nazionale = True
+    elif is_naz:
+        target_sede_id = sede_nazionale_id if solo_nazionale else None
+        broadcast_nazionale = not solo_nazionale
+    else:
+        target_sede_id = user.get("sede_id")
+        broadcast_nazionale = False
+
     doc_record = {
         "nome": nome,
         "categoria": categoria,
         "descrizione": descrizione,
         "filename": file.filename,
         "path": filename,
-        "sede_id": user.get("sede_id") if not user_has_role(user, "superadmin") else None,
+        "sede_id": target_sede_id,
+        "broadcast_nazionale": broadcast_nazionale,
         "uploaded_by": user["id"],
+        "autore_sede_id": user.get("sede_id"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -109,7 +133,9 @@ async def download_documento(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento non trovato")
 
-    if not user_has_any_role(user, ["superadmin", "superuser"]):
+    # v0.14.0: admin/segretario del Nazionale possono scaricare tutti i documenti
+    is_naz_reader = await is_sede_nazionale_member(user, roles=["admin", "segretario"])
+    if not user_has_any_role(user, ["superadmin", "superuser"]) and not is_naz_reader:
         if doc.get("sede_id") and doc["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
 
