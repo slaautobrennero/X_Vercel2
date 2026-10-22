@@ -19,8 +19,9 @@ from slowapi import Limiter
 
 
 def get_client_ip(request: Request) -> str:
-    """IP reale del client: Cloudflare (CF-Connecting-IP) > X-Forwarded-For > socket."""
-    ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    """IP reale: CF-Connecting-IP (scritto da Cloudflare, non falsificabile perché il backend
+    ascolta solo su 127.0.0.1) > ultimo X-Forwarded-For (aggiunto dal proxy davanti) > socket."""
+    ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[-1].strip()
     return ip or (request.client.host if request.client else "unknown")
 
 

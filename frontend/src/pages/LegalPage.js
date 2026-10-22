@@ -22,7 +22,7 @@ function renderMarkdown(md) {
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     // link markdown [text](url)
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
-      const safe = /^(https?:\/\/|mailto:|\/)/i.test(url.trim()) ? url.trim().replace(/"/g, '&quot;') : '#';
+      const safe = /^(https?:\/\/|mailto:|\/(?!\/))/i.test(url.trim()) ? url.trim().replace(/"/g, '&quot;') : '#';
       return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-[#1E4D8C] underline">${text}</a>`;
     });
 

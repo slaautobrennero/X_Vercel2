@@ -2,7 +2,7 @@
 Pydantic models per validazione I/O API.
 """
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # --- USER ---
@@ -126,14 +126,14 @@ class RimborsoCreate(BaseModel):
     indirizzo_partenza: str
     indirizzo_partenza_tipo: str = "manuale"
     indirizzo_arrivo: str
-    km_andata: float
+    km_andata: float = Field(ge=0, le=5000)
     km_calcolati: Optional[float] = None
     km_modificati_manualmente: bool = False
     andata_ritorno: bool = True
     uso_autostrada: bool = False
-    costo_autostrada: float = 0
-    importo_pasti: float = 0
-    numero_partecipanti_pasto: int = 0
+    costo_autostrada: float = Field(0, ge=0)
+    importo_pasti: float = Field(0, ge=0)
+    numero_partecipanti_pasto: int = Field(0, ge=0)
     note: Optional[str] = None
 
 

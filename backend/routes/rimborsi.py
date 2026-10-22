@@ -15,7 +15,7 @@ from core.auth import get_current_user
 from core.db import db
 from core.storage import delete_upload, detect_ext, get_local_path, require_ext, save_upload
 from core.notifications import _notify_user, _notify_users_by_role
-from core.roles import is_sede_nazionale_member, user_has_any_role
+from core.roles import user_has_role, is_sede_nazionale_member, user_has_any_role
 from models_api import RimborsoCreate, RimborsoUpdate
 
 router = APIRouter()
@@ -191,6 +191,8 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
 
     if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
+    if rimborso["user_id"] != user["id"] and not user_has_role(user, "superadmin") and rimborso.get("sede_id") != user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
 
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato. Usa PDF, JPG o PNG")
@@ -230,6 +232,8 @@ async def upload_ricevute_multi(rimborso_id: str, request: Request, files: List[
 
     if rimborso["user_id"] != user["id"] and not user_has_any_role(user, ["admin", "cassiere", "superadmin"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
+    if rimborso["user_id"] != user["id"] and not user_has_role(user, "superadmin") and rimborso.get("sede_id") != user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
 
     uploaded = []
     for f in files:

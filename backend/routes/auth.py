@@ -189,6 +189,7 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
         "ruoli": user_ruoli,
         "sede_id": user.get("sede_id"),
         "totp_enabled": bool(user.get("totp_enabled")),
+        "must_change_password": bool(user.get("must_change_password")),
         "created_at": user["created_at"],
     }
 

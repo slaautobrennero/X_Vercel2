@@ -1,0 +1,46 @@
+{
+  "summary": "Tested the v0.14.3-beta security-audit fixes on the backend and the frontend. Backend: new suite test_v0143_security_audit.py, 32/32 passed. It covers SEC-001 user update and role permissions (cross-sede, admin on admin/superuser, self-roles, admin cannot assign privileged roles, superadmin can do everything), reset-password and toggle-disabled restrictions, session revocation through token_version (change-password, admin reset, disable/re-enable: old access cookie gets 401 on /auth/me and old refresh cookie gets 401 on /auth/refresh), must_change_password (403 PASSWORD_CHANGE_REQUIRED, /me and /notifiche allowed, works again after the change), CSRF blocking an evil Origin or Referer on POST/PUT/DELETE while same-origin works, separate lockout counters per CF-Connecting-IP (tested on localhost:8001 because Cloudflare rejects that header on the public URL with error 1000), magic-byte checks on /documenti, /rimborsi/{id}/ricevute and /annunci (fake PDF gives 400; a real PDF/PNG/JPG is accepted and the saved extension comes from the content), annunci rejecting javascript: links, CSV/XLSX export showing '=SUM(1) as \"'=SUM(1)\" while numbers keep their value, PUT on another user's notification leaving it unchanged, and avvisi-sicurezza being superadmin-only. Startup persistence was checked by hand: a test sede and motivo survived a backend restart, and the superadmin password hash stayed the same. Frontend: superadmin dashboard shows the avvisi-sicurezza box (admin does not); rimborsi list and creation, bacheca, documenti, utenti and guide load with no API errors; the admin Utenti page hides edit/reset/toggle for other admins and offers no admin/superuser/superadmin roles; admin password reset and registration approval work in the UI; Bacheca does not render a javascript: link; LegalPage renders [x](javascript:...) with href='#'. ONE BUG: right after logging in, a must_change_password user is NOT sent to /profilo.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "core/rate_limit.py get_client_ip (login lockout + all slowapi limits)", "issue": "SECURITY: get_client_ip trusts CF-Connecting-IP and the leftmost X-Forwarded-For value from the client without checking. Reproduced on the public URL: POST /api/auth/login with 'X-Forwarded-For: 7.7.7.7' produced a login_attempts row with identifier '7.7.7.7:<email>'. An attacker can change this header on every request and bypass the 5-attempt lockout, login 10/min, register 3/h and reset 20/h. On a self-hosted deployment (Raspberry Pi/docker, without Cloudflare in front) CF-Connecting-IP can also be forged.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "The response body does not include must_change_password (only /auth/me has it). This causes the frontend redirect bug described below."},
+      {"endpoint": "POST /api/rimborsi/{id}/ricevute, /ricevute-multi", "issue": "Admins/cassieri can upload to rimborsi of ANY sede: there is no check that the rimborso belongs to their sede (same cross-sede pattern as SEC-001)."},
+      {"endpoint": "POST /api/rimborsi", "issue": "No lower bound on km_andata, costo_autostrada or importo_pasti: negative values are accepted and produce negative amounts."},
+      {"endpoint": "tests/test_phase_b_security.py, tests/test_v0141_gridfs_storage.py", "issue": "Old tests are out of date: they expect version 0.11.0-beta and register without privacy_accepted/termini_accepted, so 5 of them fail. These are not regressions."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AuthContext.login + MainLayout must_change_password redirect", "issue": "After logging in with a temporary password, the user lands on '/' (Dashboard). The must-change banner is missing, the dashboard and contatti calls fail with 403 and the counters show zeros. The redirect to /profilo only happens after a full page load (page.goto / refresh), because AuthContext calls setUser(response.data) with the login response, which has no must_change_password. Fix: add 'must_change_password': bool(user.get('must_change_password')) to user_response in routes/auth.py login, or call /auth/me after login. Once the user is on /profilo: other URLs redirect to /profilo, and changing the password sends the user to /login so they log in again (this works).", "selector": "[data-testid='must-change-password-banner']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Rimborsi new request modal", "issues": ["rimborso-data-input uses the browser's native type='date' picker instead of the shadcn Calendar"]},
+      {"screen": "LegalPage", "issues": ["The markdown link check allows protocol-relative URLs ('//evil.example.com' is rendered as is, because the regex accepts anything starting with '/'). Low risk, since only the superadmin can author this content. Use /^(https?:\\/\\/|mailto:|\\/(?!\\/))/"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_v0143_security_audit.py", "/app/test_reports/pytest/pytest_v0143.xml"],
+  "action_items": [
+    "HIGH: return must_change_password in the POST /api/auth/login response (or refresh /auth/me after login) so MainLayout redirects to /profilo straight after login",
+    "HIGH: harden get_client_ip. Trust CF-Connecting-IP / X-Forwarded-For only when request.client.host is a configured trusted proxy (e.g. a TRUSTED_PROXIES env var), or take the right-most XFF hop added by your own proxy. Otherwise the lockout and the rate limits can be bypassed by changing the header",
+    "MEDIUM: add sede checks for admin/cassiere on rimborso receipt uploads (ricevute, ricevute-multi)",
+    "LOW: validate km/amounts >= 0 in RimborsoCreate (Field(ge=0))",
+    "LOW: LegalPage link regex should reject '//' protocol-relative URLs",
+    "LOW: update the outdated version/register assertions in test_phase_b_security.py and test_v0141_gridfs_storage.py"
+  ],
+  "critical_code_review_comments": [
+    "get_client_ip: header-based IP without a trusted-proxy check (see above). This is the most important remaining hole from the audit",
+    "csrf_origin_middleware: also uses Referer when Origin is missing (good); requests with no Origin/Referer are allowed by design",
+    "users.update_role: the 400 for a privileged role is returned before the target check, which is fine. Superadmin can remove its own superadmin role (there is no guard against the last superadmin demoting itself)",
+    "Several notifications and audit records stay after cleanup because the delete_user path removes notifications but not the audit_log (expected)"
+  ],
+  "updated_files": ["/app/backend/tests/test_v0143_security_audit.py"],
+  "success_rate": {"backend": "100% (32/32 new security tests); registration-approval regression suite passing", "frontend": "~90% (must_change redirect right after login fails; everything else passes)"},
+  "seed_data_creation": "All test data was created directly in Mongo or through the superadmin API and then deleted: test users, TEST_ sedi/annunci/documenti, the 2099 rimborsi, the custom 'cookie' legal doc, the persistence sede/motivo and the login_attempts rows. The superadmin password was not changed (hash unchanged). Older leftover TEST_ annunci/documenti from earlier runs were also removed. Some audit_log entries for deleted test users remain.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_v0143_security_audit.py -v. The file creates its own sedi and users (emails must be lowercase). The CF-Connecting-IP test uses http://localhost:8001 because Cloudflare blocks that header on the public URL (error 1000). It sends X-Forwarded-For per session to avoid the login rate limit, which only works because of the reported XFF trust issue; if that gets fixed, the _login helper in the test will need changing. Next: verify the must_change_password redirect straight after the UI login and the get_client_ip hardening.",
+  "rca of the issue": "must_change redirect: routes/auth.py login builds user_response without must_change_password; AuthContext.login calls setUser(response.data); MainLayout checks user?.must_change_password, which is undefined, so no redirect until a page load calls /auth/me. Repro: reset a user's password as admin, log in with the temp password, and you land on the Dashboard with 403 errors. IP spoofing: get_client_ip returns headers['cf-connecting-ip'] or the first XFF value as sent by the client; the ingress appends the real IP but keeps the client-supplied first value."
+}

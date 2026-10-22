@@ -68,7 +68,7 @@ def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-PASSWORD_CHANGE_ALLOWED = {"/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/notifiche", "/api/gdpr/nuovi-documenti"}
+PASSWORD_CHANGE_ALLOWED = {"/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/notifiche", "/api/gdpr/nuovi-documenti", "/api/gdpr/marca-documenti-visti"}
 
 
 async def get_current_user(request: Request) -> dict:
