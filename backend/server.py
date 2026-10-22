@@ -47,6 +47,7 @@ from core.config import FRONTEND_ORIGIN_REGEX, logger
 from core.db import client, db
 from core.rate_limit import limiter
 from core.storage import sync_local_to_gridfs
+from bson.errors import InvalidId
 from core.scheduler import _pending_reimbursements_scheduler
 
 # === Route modules ===
@@ -84,6 +85,11 @@ app = FastAPI(
 # Attivato per proteggere endpoint sensibili (auth, reset password, google maps).
 # Vedi core/rate_limit.py per configurazione.
 app.state.limiter = limiter
+
+
+@app.exception_handler(InvalidId)
+async def invalid_id_handler(request: Request, exc: InvalidId):
+    return JSONResponse(status_code=400, content={"detail": "Identificativo non valido"})
 
 
 @app.exception_handler(RateLimitExceeded)

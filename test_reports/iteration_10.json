@@ -1,0 +1,35 @@
+{
+  "summary": "Tested v0.15: registration approval (backend + UI) and the inactivity auto-logout. Backend: pytest tests/test_v015_registration_approval.py passed 15 of 16 tests. The one failure is a minor 500 on an invalid ObjectId. Frontend: the /register pending screen, the /utenti approvals box (approve, reject with confirm/dismiss, list refresh, pending users hidden from the main table), the Audit Log labels, and the inactivity dialog and logout all work. One bug: no sonner <Toaster/> is mounted anywhere in the app, so none of the toast messages appear. This includes 'Sei stato disconnesso per inattività' and 'Registrazione approvata/rifiutata'. Guide content was checked in the source files: the 'Limiti noti' chapter no longer lists inactivity logout or registration approval, and the Iscritto guide has 'Attendi l'approvazione' and 'Uscita automatica'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/users/{id}/approva and /rifiuta", "issue": "A non-ObjectId id (e.g. 'not-an-id') returns 500 (bson InvalidId is not caught). It should return 400 or 404. The same pattern exists in other /users/{id} endpoints and in register when sede_id is invalid."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js (global)", "issue": "The sonner <Toaster /> is never mounted (grep finds no '<Toaster' in src). Every toast.info/success/error call from 'sonner' is invisible: the inactivity logout toast 'Sei stato disconnesso per inattività', the approve/reject toasts in RegistrazioniInAttesa (including error messages such as 403), and the GuidaPage download toast. The redirect to /login does work.", "selector": "[data-sonner-toast]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_v015_registration_approval.py", "/app/test_reports/pytest/pytest_v015.xml", "/app/test_reports/pytest/pytest_v015_reg.xml"],
+  "action_items": [
+    "Mount the sonner Toaster once at app root, e.g. in App.js: import { Toaster } from 'sonner' (or components/ui/sonner) and render <Toaster richColors position='top-right' /> inside the providers. Then re-check the inactivity toast and the approve/reject toasts.",
+    "Catch bson InvalidId in approva/rifiuta (and other ObjectId(user_id) calls) and return 400 or 404 instead of 500."
+  ],
+  "critical_code_review_comments": [
+    "InattivitaLogout.esci: if axios POST /auth/logout fails, AuthContext.logout throws before setUser(false). The user state stays set and navigate('/login') may bounce back. Call setUser(false) in a finally block inside logout.",
+    "InattivitaLogout resets sla_last_activity on mount, so opening or reloading another tab counts as activity. This is acceptable but worth knowing.",
+    "_notify_users_by_role does not exclude disabled or in_attesa users. Pending users with a privileged role cannot normally exist via self-registration, so the risk is low.",
+    "Approva and rifiuta are not atomic: the find and the update/delete are separate steps, so two concurrent calls could both pass the check. Use find_one_and_update/delete with the filter {stato_approvazione:'in_attesa'}."
+  ],
+  "updated_files": ["/app/backend/tests/test_v015_registration_approval.py"],
+  "success_rate": {"backend": "94% (15/16)", "frontend": "90% (all flows work; toasts not visible)"},
+  "seed_data_creation": "The test fixtures created temporary users and a second sede in Mongo; they were cleaned up in teardown. UI-test users ui_* were deleted afterwards. Remaining users: superadmin@sla.it and pending1@test.it. The audit_log entries from the tests remain.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "test_credentials": "superadmin@sla.it / SlaAdmin2024!, pending1@test.it / Prova123! (from /app/memory/test_credentials.md; pending1 is not listed there)",
+  "context_for_next_testing_agent": "The pytest file creates its own users and sede with a random TAG and cleans them up. Login is rate-limited to 10/min (the test retries) and register to 3/hour (restart the backend to reset). Inactivity test: after login, set localStorage sla_last_activity = Date.now()-29.5*60*1000 without mouse moves, and the dialog appears within 1s. Only retest the toast visibility after the Toaster fix.",
+  "rca of the issue": "Toast missing: components call toast() from 'sonner', but no <Toaster/> renderer is mounted in the React tree. sonner only renders toasts when a <Toaster/> exists. Reproduce: approve a registration in /utenti, or trigger the inactivity logout; no toast appears and the [data-sonner-toast] count is 0. Fix: add <Toaster/> in App.js."
+}

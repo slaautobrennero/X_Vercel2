@@ -33,6 +33,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { Toaster } from './components/ui/sonner';
 import { hasAnyRole } from './lib/utils';
 import './App.css';
 
@@ -199,6 +200,7 @@ function App() {
         </AuthProvider>
       </BrowserRouter>
       <VersionBadge />
+      <Toaster position="top-right" richColors />
     </div>
   );
 }
