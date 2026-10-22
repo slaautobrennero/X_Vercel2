@@ -43,7 +43,7 @@ export function buildOfflineHtml(guide, nomeSindacato) {
   const data = new Date().toLocaleDateString('it-IT');
   const tabs = guide.length > 1 ? `<nav class="tabs">${guide.map((g) => `<a href="#${g.id}">${esc(g.titolo)}</a>`).join('')}</nav>` : '';
   const titolo = guide.length === 1 ? guide[0].titolo : 'Guide del Portale';
-  return `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titolo)} — Portale SLA</title><style>${CSS}</style></head><body><div class="wrap"><div class="top"><span class="brand">${esc(nomeSindacato)}</span><span class="meta">Versione offline · scaricata il ${data}</span></div>${tabs}${guide.map(guidaHtml).join('')}</div><script>${JS}</script></body></html>`;
+  return `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titolo)} — Portale SLA</title><style>${CSS}</style><noscript><style>li{opacity:1;transform:none}</style></noscript></head><body><div class="wrap"><div class="top"><span class="brand">${esc(nomeSindacato)}</span><span class="meta">Versione offline · scaricata il ${data}</span></div>${tabs}${guide.map(guidaHtml).join('')}</div><script>${JS}</script></body></html>`;
 }
 
 export function scaricaHtml(guide, nomeFile, nomeSindacato = 'SLA - CISAL · Portale') {

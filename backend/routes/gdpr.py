@@ -12,6 +12,7 @@ Endpoint per compliance GDPR:
 import csv
 import io
 import zipfile
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -331,7 +332,7 @@ async def get_my_data(request: Request):
         anagrafica["sede_id"] = str(anagrafica["sede_id"])
 
     # Rimborsi
-    rimborsi_cursor = db.rimborsi.find({"user_id": user_oid})
+    rimborsi_cursor = db.rimborsi.find({"user_id": {"$in": [user_id_str, user_oid]}})
     rimborsi = []
     async for r in rimborsi_cursor:
         r["_id"] = str(r["_id"])
@@ -475,18 +476,17 @@ async def export_zip(request: Request):
         anagrafica["sede_id"] = str(anagrafica["sede_id"])
 
     rimborsi = []
-    file_da_includere = set()
-    async for r in db.rimborsi.find({"user_id": user_oid}):
+    file_da_includere = {}
+    async for r in db.rimborsi.find({"user_id": {"$in": [user["id"], user_oid]}}):
         r["_id"] = str(r["_id"])
         r["user_id"] = str(r["user_id"])
         if r.get("sede_id"):
             r["sede_id"] = str(r["sede_id"])
         # Colleziona file allegati
-        for rc in r.get("ricevute", []) or []:
-            if isinstance(rc, dict) and rc.get("filename"):
-                file_da_includere.add(rc["filename"])
-        if r.get("contabile_filename"):
-            file_da_includere.add(r["contabile_filename"])
+        allegati = (r.get("ricevute") or []) + (r.get("ricevute_spese") or []) + [r.get("contabile")]
+        for rc in allegati:
+            if isinstance(rc, dict) and rc.get("path"):
+                file_da_includere[rc["path"]] = f"{rc['path'].rsplit('.', 1)[0]}_{Path(rc.get('filename') or rc['path']).name}"
         rimborsi.append(r)
 
     consensi = []
@@ -508,10 +508,10 @@ async def export_zip(request: Request):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("dati.json", json.dumps(payload, indent=2, ensure_ascii=False, default=str))
         # Aggiunge file allegati se presenti
-        for fname in file_da_includere:
-            p = await get_local_path(fname) if fname else None
+        for key, nome in file_da_includere.items():
+            p = await get_local_path(key)
             if p:
-                zf.write(p, arcname=f"ricevute/{fname}")
+                zf.write(p, arcname=f"ricevute/{nome}")
         # Info privacy
         settings = await get_settings()
         zf.writestr("README.txt", (

@@ -1,0 +1,41 @@
+{
+  "summary": "v0.14.1-beta tested: Guide pages (all roles, filtering, tabs, index scroll, step animation, FAQ accordion, single/all HTML download, offline rendering, 390px responsive) all PASS. GridFS storage for documenti/annunci/ricevute PASS (upload, download, restore after local file deleted, delete removes both local + allegati.files). /api/version = 0.14.1-beta. ONE BUG: GDPR export ZIP (and /gdpr/my-data) returns 0 rimborsi and no allegati due to ObjectId vs string user_id mismatch (pre-existing, but explicitly requested to verify).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/gdpr/export-zip", "issue": "Queries db.rimborsi.find({'user_id': ObjectId(...)}) but rimborsi store user_id as STRING (rimborsi.py:133) -> 0 rimborsi exported, ZIP contains only dati.json + README.txt, no allegati. Also file collection uses rc['filename'] (original user-supplied name, e.g. 'scontrino.pdf') instead of rc['path'] (stored UUID key), and checks r['contabile_filename'] while contabile is stored as r['contabile'] = {filename, path}. Fix: query {'user_id': user['id']} (or $in both forms), collect rc['path'] and r['contabile']['path'], arcname may use original filename.", "priority": "HIGH"},
+      {"endpoint": "GET /api/gdpr/my-data", "issue": "Same ObjectId vs string user_id mismatch -> rimborsi always empty in art.15 access response.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "core/storage.py", "issue": "get_local_path/save_upload do not validate the key (no basename / path traversal guard). Currently keys are server-generated, but if GDPR fix keeps using user-supplied rc['filename'] it becomes a path-traversal read. Add Path(name).name == name check."},
+      {"endpoint": "core/storage.py sync_local_to_gridfs", "issue": "Uses blocking path.read_bytes() inside async startup task; fine for small sets but blocks the event loop on large uploads dir."},
+      {"endpoint": "old regression tests", "issue": "Stale assertions in older test files (version pins 0.11-0.14.0, legal doc version '1.0' now '1.3', register payload missing privacy_accepted/termini_accepted, rate-limit tests sensitive to prior state). Not app regressions."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Offline HTML guide", "issues": ["Steps (li) start at opacity:0 and rely on JS IntersectionObserver; if JS is disabled (e.g. some mail/preview viewers) steps stay invisible. Consider <noscript><style>li{opacity:1;transform:none}</style></noscript>."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_v0141_gridfs_storage.py", "/app/test_reports/pytest/pytest_v0141.xml"],
+  "action_items": [
+    "Fix GDPR export-zip & my-data: match rimborsi.user_id as string, include ricevute via rc['path'] and contabile via r['contabile']['path']",
+    "Add basename guard in core/storage.py for keys",
+    "Optional: noscript fallback for offline guide steps",
+    "Optional: update stale version/legal-version assertions in older test files"
+  ],
+  "critical_code_review_comments": [
+    "Guide role filtering is client-side only: the 'Dettagli tecnici' / 'Limiti noti' sections (infra: Tailscale SSH, Cloudflare Tunnel, missing inactivity logout, no email alerts) ship in the JS bundle to every user incl. iscritti. Low-risk info disclosure; consider serving admin-only guide content from an authenticated API or removing sensitive infra details.",
+    "GridFS put_binary does not dedupe: re-saving the same key creates duplicate files (get by name returns latest; delete removes all) - acceptable but note.",
+    "get_local_path writes restored file non-atomically; concurrent downloads of a missing file may race (minor)."
+  ],
+  "updated_files": ["/app/backend/tests/test_v0141_gridfs_storage.py"],
+  "success_rate": {"backend": "83% (5/6 new tests; only GDPR export fails)", "frontend": "100%"},
+  "seed_data_creation": "Created via DB: test_guida_iscritto@example.com and test_guida_delegato@example.com (password TestGuida2024!, roles iscritto / delegato). Test docs/annunci/rimborsi cleaned up; orphan GridFS entry removed.",
+  "test_credentials": "superadmin@sla.it / SlaAdmin2024! ; test_guida_iscritto@example.com / TestGuida2024! ; test_guida_delegato@example.com / TestGuida2024!",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run tests/test_v0141_gridfs_storage.py; test_gdpr_export_zip_includes_allegati should pass after GDPR fix. Guides verified: SA 7 tabs, iscritto 2 tabs (no tecnico/limiti), delegato 3 tabs; downloads guida-<id>.html / guide-portale-sla.html self-contained (no external refs), offline render OK incl. <details> and scroll animation; 390px no overflow. Auth: httpOnly cookies set on login (verified earlier iterations).",
+  "rca of the issue": "GDPR export: rimborsi.create stores user_id=user['id'] (str) while gdpr.py queries ObjectId(user['id']) -> no match. Repro: create rimborso as superadmin, upload ricevuta, GET /api/gdpr/export-zip -> dati.json rimborsi=[] and no ricevute/ entries. Mitigation: query with string id and use stored 'path' keys."
+}

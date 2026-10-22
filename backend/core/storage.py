@@ -43,6 +43,8 @@ async def save_upload(filename: str, content: bytes) -> None:
 
 async def get_local_path(filename: str) -> Optional[Path]:
     """Ritorna il path su disco; se manca lo ripristina da GridFS."""
+    if not filename or Path(filename).name != filename:
+        return None
     path = UPLOAD_DIR / filename
     if path.exists():
         return path
@@ -66,7 +68,8 @@ async def sync_local_to_gridfs() -> None:
     copied = 0
     for path in UPLOAD_DIR.iterdir():
         if path.is_file() and not await blob_store.exists(path.name):
-            await blob_store.put_binary(path.name, path.read_bytes())
+            async with aiofiles.open(path, "rb") as f:
+                await blob_store.put_binary(path.name, await f.read())
             copied += 1
     if copied:
         logger.info(f"Storage: {copied} allegati locali copiati in GridFS")
