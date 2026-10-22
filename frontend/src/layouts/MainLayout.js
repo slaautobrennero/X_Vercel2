@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, hasAnyRole, hasRole } from '../lib/utils';
@@ -268,7 +268,7 @@ export default function MainLayout() {
               </button>
             </div>
           )}
-          <Outlet />
+          {user?.must_change_password && location.pathname !== '/profilo' ? <Navigate to="/profilo" replace /> : <Outlet />}
           <InattivitaLogout />
         </main>
 

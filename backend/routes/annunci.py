@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from core.auth import get_current_user
 from core.db import db
-from core.storage import delete_upload, get_local_path, save_upload
+from core.storage import delete_upload, get_local_path, require_ext, save_upload
 from core.notifications import _notify_all_in_sede
 from core.roles import (
     get_sede_nazionale_id,
@@ -58,6 +58,9 @@ async def create_annuncio(
     if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
         raise HTTPException(status_code=403, detail="Permessi insufficienti")
 
+    if link_documento and not link_documento.strip().lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Il link deve iniziare con http:// o https://")
+
     allegato_filename = None
     allegato_path = None
 
@@ -70,7 +73,7 @@ async def create_annuncio(
             raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
 
         file_id = str(uuid.uuid4())
-        ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+        ext = require_ext(content)
         stored_name = f"annuncio_{file_id}.{ext}"
         await save_upload(stored_name, content)
 

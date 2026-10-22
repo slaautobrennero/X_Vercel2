@@ -60,12 +60,12 @@ services:
       MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
       DB_NAME: sla_sindacato
       
-      # JWT - CAMBIA IN PRODUZIONE!
-      JWT_SECRET: ${JWT_SECRET:-genera-una-chiave-segreta-lunga-almeno-32-caratteri}
+      # JWT - obbligatoria (minimo 32 caratteri), il portale non si avvia senza
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obbligatorio in docker/.env}
       
       # Admin iniziale (solo al primo avvio se non esiste già)
       ADMIN_EMAIL: ${ADMIN_EMAIL:-superadmin@sla.it}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-CambiaQuestaPassword!}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD obbligatorio in docker/.env}
       
       # Google Maps (opzionale)
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
@@ -77,8 +77,9 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     volumes:
       - uploads_data:/app/uploads
+    # Solo dal Raspberry stesso (Cloudflare Tunnel): non raggiungibile dalla rete di casa
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     networks:
       - sla-network
 

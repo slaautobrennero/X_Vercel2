@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from core.audit import _log_audit
 from core.auth import get_current_user
 from core.db import db
-from core.storage import delete_upload, get_local_path, save_upload
+from core.storage import delete_upload, detect_ext, get_local_path, require_ext, save_upload
 from core.notifications import _notify_user, _notify_users_by_role
 from core.roles import is_sede_nazionale_member, user_has_any_role
 from models_api import RimborsoCreate, RimborsoUpdate
@@ -200,7 +200,7 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
 
     file_id = str(uuid.uuid4())
-    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    ext = require_ext(content)
     filename = f"{file_id}.{ext}"
     await save_upload(filename, content)
 
@@ -241,7 +241,9 @@ async def upload_ricevute_multi(rimborso_id: str, request: Request, files: List[
             continue
 
         file_id = str(uuid.uuid4())
-        ext = f.filename.split(".")[-1] if "." in f.filename else "pdf"
+        ext = detect_ext(content)
+        if not ext:
+            continue
         filename = f"{file_id}.{ext}"
         await save_upload(filename, content)
 
@@ -347,7 +349,7 @@ async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: Upload
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
 
     file_id = str(uuid.uuid4())
-    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    ext = require_ext(content)
     filename = f"spesa_{file_id}.{ext}"
     await save_upload(filename, content)
 
@@ -459,7 +461,7 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
 
     file_id = str(uuid.uuid4())
-    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    ext = require_ext(content)
     filename = f"contabile_{file_id}.{ext}"
     await save_upload(filename, content)
 

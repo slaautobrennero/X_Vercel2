@@ -20,6 +20,9 @@ DB_NAME = os.environ['DB_NAME']
 # JWT
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
+_JWT_DEFAULTS = {"", "CAMBIA_QUESTA_CHIAVE_CON_UNA_CASUALE_DI_64_CARATTERI", "genera-una-chiave-segreta-lunga-almeno-32-caratteri", "CAMBIA-QUESTA-CHIAVE-IN-PRODUZIONE", "changeme", "secret"}
+if JWT_SECRET in _JWT_DEFAULTS or len(JWT_SECRET) < 32:
+    raise RuntimeError("JWT_SECRET mancante, di esempio o troppo corta (minimo 32 caratteri): impostala in docker/.env")
 
 # Google Maps API (opzionale)
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')

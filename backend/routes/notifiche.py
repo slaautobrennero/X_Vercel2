@@ -32,10 +32,13 @@ async def get_notifiche(request: Request):
 
 @router.put("/notifiche/{notifica_id}/letto")
 async def mark_notifica_letta(notifica_id: str, request: Request):
-    await get_current_user(request)  # solo per autenticare
+    user = await get_current_user(request)
 
     await db.notifiche.update_one(
-        {"_id": ObjectId(notifica_id)},
+        {"_id": ObjectId(notifica_id), "$or": [
+            {"user_id": user["id"]},
+            {"user_id": None, "sede_id": user.get("sede_id")},
+        ]},
         {"$set": {"letto": True}},
     )
 

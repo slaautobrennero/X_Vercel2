@@ -4,7 +4,7 @@ Configurazione centralizzata di slowapi (rate limiting per IP).
 
 Backend in-memory: perfetto per singolo processo/singolo Pi.
 Se in futuro si scalerà a più istanze, sostituire con Redis:
-    limiter = Limiter(key_func=get_remote_address, storage_uri="redis://redis:6379")
+    limiter = Limiter(key_func=get_client_ip, storage_uri="redis://redis:6379")
 
 Uso nei router:
     from core.rate_limit import limiter
@@ -14,8 +14,15 @@ Uso nei router:
     async def endpoint(request: Request):  # request DEVE essere primo arg
         ...
 """
+from fastapi import Request
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+
+
+def get_client_ip(request: Request) -> str:
+    """IP reale del client: Cloudflare (CF-Connecting-IP) > X-Forwarded-For > socket."""
+    ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return ip or (request.client.host if request.client else "unknown")
+
 
 # ==============================================================
 # Limiter globale: usa l'IP remoto come chiave.
@@ -24,7 +31,7 @@ from slowapi.util import get_remote_address
 # che NON hanno un decoratore specifico.
 # ==============================================================
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_client_ip,
     default_limits=["200/minute"],  # safety net globale, molto largo
     headers_enabled=True,             # aggiunge X-RateLimit-* header
 )

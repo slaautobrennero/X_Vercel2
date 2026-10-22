@@ -25,6 +25,7 @@ from core.audit import _log_audit
 from core.auth import get_current_user
 from core.db import db
 from core.storage import get_local_path
+from core.rate_limit import get_client_ip
 from core.legal_templates import (
     PRIVACY_TEMPLATE, COOKIE_TEMPLATE, TERMINI_TEMPLATE,
     PRIVACY_VERSION, COOKIE_VERSION, TERMINI_VERSION,
@@ -397,7 +398,7 @@ async def richiedi_cancellazione(payload: RichiestaCancellazioneIn, request: Req
         "richiesta_il": now,
         "esecuzione_prevista": data_disabilitazione,
         "anonimizzazione_prevista": data_anonimizzazione,
-        "ip": request.client.host if request.client else None,
+        "ip": get_client_ip(request),
     }
     result = await db.richieste_cancellazione.insert_one(doc)
     await _log_audit(user, "gdpr.richiesta_cancellazione", target_type="user", target_id=user["id"], note=payload.motivo or "")

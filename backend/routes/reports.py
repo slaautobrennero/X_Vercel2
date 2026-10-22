@@ -17,6 +17,17 @@ from core.roles import is_sede_nazionale_member, user_has_any_role
 router = APIRouter()
 
 
+def _safe_cell(v):
+    """Neutralizza formule (=, +, -, @) nei testi esportati verso fogli di calcolo."""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        try:
+            float(v)
+            return v
+        except ValueError:
+            return "'" + v
+    return v
+
+
 @router.get("/reports/rimborsi-annuali")
 async def get_report_rimborsi_annuali(request: Request, anno: int, sede_id: str | None = None):
     user = await get_current_user(request)
@@ -121,7 +132,7 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv", sed
         if rimborsi:
             writer = csv.DictWriter(output, fieldnames=rimborsi[0].keys())
             writer.writeheader()
-            writer.writerows(rimborsi)
+            writer.writerows([{k: _safe_cell(v) for k, v in r.items()} for r in rimborsi])
 
         output.seek(0)
         return StreamingResponse(
@@ -156,7 +167,7 @@ async def export_rimborsi(request: Request, anno: int, formato: str = "csv", sed
 
         for row_idx, r in enumerate(rimborsi, start=2):
             for col_idx, key in enumerate(headers, start=1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=r.get(key, ""))
+                cell = ws.cell(row=row_idx, column=col_idx, value=_safe_cell(r.get(key, "")))
                 cell.border = border
                 cell.alignment = Alignment(vertical="center")
 

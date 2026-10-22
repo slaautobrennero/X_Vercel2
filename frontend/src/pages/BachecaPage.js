@@ -161,7 +161,7 @@ export default function BachecaPage() {
                   )}
 
                   {/* Link esterno */}
-                  {annuncio.link_documento && (
+                  {/^https?:\/\//i.test(annuncio.link_documento || '') && (
                     <a
                       href={annuncio.link_documento}
                       target="_blank"

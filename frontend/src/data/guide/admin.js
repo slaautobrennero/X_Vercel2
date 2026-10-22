@@ -39,10 +39,10 @@ const guidaAdmin = {
       intro: 'Un utente può avere più ruoli contemporaneamente (es. Delegato + Cassiere).',
       passi: [
         { t: 'Apri Utenti', d: 'Cerca la persona e premi Modifica Ruoli.', btn: 'Modifica Ruoli' },
-        { t: 'Scegli i ruoli', d: 'Seleziona uno o più ruoli. "Iscritto" è esclusivo: non si combina con gli altri.' },
+        { t: 'Scegli i ruoli', d: 'Puoi assegnare Iscritto, Delegato, Segreteria, Segretario e Cassiere. "Iscritto" è esclusivo: non si combina con gli altri.' },
         { t: 'Salva', d: 'La modifica viene registrata nell\'Audit Log con il valore precedente e quello nuovo.' },
       ],
-      nota: { tipo: 'info', testo: 'I ruoli SuperAdmin e SuperUser possono essere assegnati solo dal SuperAdmin.' },
+      nota: { tipo: 'info', testo: 'I ruoli Admin, SuperUser e SuperAdmin li assegna solo il SuperAdmin. Puoi gestire solo gli utenti della tua concessionaria, non altri Admin né i tuoi stessi ruoli.' },
     },
     {
       id: 'controllo',

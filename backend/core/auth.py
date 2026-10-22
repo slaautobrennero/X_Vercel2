@@ -47,23 +47,28 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "tv": token_version,
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),
         "type": "access",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
+        "tv": token_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
         "type": "refresh",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+PASSWORD_CHANGE_ALLOWED = {"/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/notifiche", "/api/gdpr/nuovi-documenti"}
 
 
 async def get_current_user(request: Request) -> dict:
@@ -89,6 +94,10 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="Utente non trovato")
         if user.get("disabled") or user.get("stato_approvazione") == "in_attesa":
             raise HTTPException(status_code=401, detail="Account non attivo")
+        if payload.get("tv", 0) != user.get("token_version", 0):
+            raise HTTPException(status_code=401, detail="Sessione scaduta, accedi di nuovo")
+        if user.get("must_change_password") and request.url.path not in PASSWORD_CHANGE_ALLOWED:
+            raise HTTPException(status_code=403, detail="PASSWORD_CHANGE_REQUIRED")
 
         user["id"] = str(user["_id"])
         user.pop("_id", None)

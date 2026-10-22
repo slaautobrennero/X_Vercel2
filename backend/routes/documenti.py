@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from core.auth import get_current_user
 from core.db import db
-from core.storage import delete_upload, get_local_path, save_upload
+from core.storage import delete_upload, get_local_path, require_ext, save_upload
 from core.notifications import _notify_all_in_sede
 from core.roles import (
     get_sede_nazionale_id,
@@ -72,7 +72,7 @@ async def upload_documento(
         raise HTTPException(status_code=400, detail="File troppo grande. Max 5MB")
 
     file_id = str(uuid.uuid4())
-    ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    ext = require_ext(content)
     filename = f"doc_{file_id}.{ext}"
     await save_upload(filename, content)
 

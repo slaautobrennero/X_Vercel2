@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 import aiofiles
+from fastapi import HTTPException
 from gridfs.errors import NoFile
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -33,6 +34,23 @@ class BlobStore:
 
 
 blob_store = BlobStore()
+
+_FIRME = ((b"%PDF-", "pdf"), (b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"))
+
+
+def detect_ext(content: bytes) -> Optional[str]:
+    """Estensione dal contenuto reale del file (PDF/PNG/JPG), None se non ammesso."""
+    for firma, ext in _FIRME:
+        if content.startswith(firma):
+            return ext
+    return None
+
+
+def require_ext(content: bytes) -> str:
+    ext = detect_ext(content)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Il contenuto del file non è un PDF, JPG o PNG valido")
+    return ext
 
 
 async def save_upload(filename: str, content: bytes) -> None:

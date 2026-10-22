@@ -9,6 +9,6 @@
  * Visibile in basso a destra in ogni pagina (componente VersionBadge).
  * Letto anche dal backend tramite GET /api/version per verifica incrociata.
  */
-export const APP_VERSION = '0.14.2-beta';
+export const APP_VERSION = '0.14.3-beta';
 export const BUILD_DATE = '2026-06-15';
-export const RELEASE_NAME = 'Approvazione registrazioni e uscita automatica';
+export const RELEASE_NAME = 'Sicurezza';

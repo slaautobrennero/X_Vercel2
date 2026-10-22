@@ -31,6 +31,9 @@ export default function UtentiPage() {
   const isSuperAdmin = hasRole(user, 'superadmin');
   const canResetPassword = hasAnyRole(user, ['admin', 'segretario', 'superadmin']);
   const canToggleDisabled = hasAnyRole(user, ['admin', 'segretario', 'superadmin']);
+  const canEditRoles = hasAnyRole(user, ['admin', 'superadmin']);
+  // Admin/Segretario gestiscono solo utenti non privilegiati della propria sede (la sede è già filtrata dal backend)
+  const gestibile = (u) => hasRole(user, 'superadmin') || !getUserRoles(u).some(r => ['admin', 'superuser', 'superadmin'].includes(r));
 
   useEffect(() => {
     fetchUsers();
@@ -295,6 +298,7 @@ export default function UtentiPage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{formatDate(u.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
+                        {canEditRoles && gestibile(u) && u.id !== user?.id && (
                         <button
                           onClick={() => openRoleEditor(u)}
                           className="p-2 text-gray-600 hover:text-[#1E4D8C] hover:bg-blue-50 rounded-md transition-colors"
@@ -303,7 +307,8 @@ export default function UtentiPage() {
                         >
                           <Shield size={18} />
                         </button>
-                        {canResetPassword && !((u.ruoli || [u.ruolo]).some(r => ['superadmin', 'superuser'].includes(r))) && u.id !== user?.id && (
+                        )}
+                        {canResetPassword && gestibile(u) && u.id !== user?.id && (
                           <button
                             onClick={() => setResetUser(u)}
                             className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
@@ -313,7 +318,7 @@ export default function UtentiPage() {
                             <KeyRound size={18} />
                           </button>
                         )}
-                        {canToggleDisabled && !((u.ruoli || [u.ruolo]).some(r => ['superadmin', 'superuser'].includes(r))) && u.id !== user?.id && (
+                        {canToggleDisabled && gestibile(u) && u.id !== user?.id && (
                           <button
                             onClick={() => setToggleUser(u)}
                             className={`p-2 rounded-md transition-colors ${
@@ -372,7 +377,7 @@ export default function UtentiPage() {
 
               <div className="space-y-2">
                 {Object.entries(RUOLI).filter(([key]) =>
-                  isSuperAdmin || !['superadmin', 'superuser'].includes(key)
+                  isSuperAdmin || !['superadmin', 'superuser', 'admin'].includes(key)
                 ).map(([key, label]) => {
                   const checked = editingRoles.includes(key);
                   const disabled =

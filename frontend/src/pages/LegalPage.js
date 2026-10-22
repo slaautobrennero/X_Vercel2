@@ -21,7 +21,10 @@ function renderMarkdown(md) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     // link markdown [text](url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-[#1E4D8C] underline">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
+      const safe = /^(https?:\/\/|mailto:|\/)/i.test(url.trim()) ? url.trim().replace(/"/g, '&quot;') : '#';
+      return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-[#1E4D8C] underline">${text}</a>`;
+    });
 
   // Tabelle: |a|b|c|
   const lines = html.split('\n');

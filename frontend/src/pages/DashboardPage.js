@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AvvisiSicurezza } from '../components/AvvisiSicurezza';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, formatDate, formatCurrency, STATI_RIMBORSO, hasAnyRole } from '../lib/utils';
 import { Link } from 'react-router-dom';
@@ -86,6 +87,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8" data-testid="dashboard-page">
+      {hasAnyRole(user, ['superadmin']) && <AvvisiSicurezza />}
       {/* Welcome */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900 font-['Manrope']">Benvenuto, {user?.nome}!</h1>

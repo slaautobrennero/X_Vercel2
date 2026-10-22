@@ -17,7 +17,7 @@ from core.captcha import verify_hcaptcha
 from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.db import db
 from core.notifications import _notify_users_by_role
-from core.rate_limit import limiter
+from core.rate_limit import get_client_ip, limiter
 from core.roles import user_has_any_role
 from models_api import (
     ChangePasswordRequest, LoginRequest, TOTPDisableRequest, TOTPEnableRequest,
@@ -52,7 +52,7 @@ async def register(user_data: UserCreate, request: Request, response: Response):
         )
 
     # Verifica hCaptcha (se HCAPTCHA_SECRET è configurato)
-    client_ip = request.client.host if request.client else None
+    client_ip = get_client_ip(request)
     await verify_hcaptcha(user_data.hcaptcha_token, action="register", client_ip=client_ip)
 
     existing = await db.users.find_one({"email": email})
@@ -127,7 +127,7 @@ async def register(user_data: UserCreate, request: Request, response: Response):
 @limiter.limit("10/minute")
 async def login(login_data: LoginRequest, request: Request, response: Response):
     email = login_data.email.lower()
-    identifier = f"{request.client.host}:{email}"
+    identifier = f"{get_client_ip(request)}:{email}"
 
     attempts = await db.login_attempts.find_one({"identifier": identifier})
     if attempts and attempts.get("count", 0) >= 5:
@@ -168,8 +168,9 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
     await db.login_attempts.delete_one({"identifier": identifier})
 
     user_id = str(user["_id"])
-    access_token = create_access_token(user_id, email)
-    refresh_token = create_refresh_token(user_id)
+    tv = user.get("token_version", 0)
+    access_token = create_access_token(user_id, email, tv)
+    refresh_token = create_refresh_token(user_id, tv)
 
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=86400, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
@@ -322,7 +323,9 @@ async def refresh_token(request: Request, response: Response):
         user = await db.users.find_one({"_id": ObjectId(user_id)})
         if not user or user.get("disabled") or user.get("stato_approvazione") == "in_attesa":
             raise HTTPException(status_code=401, detail="Utente non trovato")
-        access_token = create_access_token(user_id, user["email"])
+        if payload.get("tv", 0) != user.get("token_version", 0):
+            raise HTTPException(status_code=401, detail="Sessione scaduta, accedi di nuovo")
+        access_token = create_access_token(user_id, user["email"], user.get("token_version", 0))
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=86400, path="/")
         return {"message": "Token aggiornato"}
     except jwt.ExpiredSignatureError:
@@ -354,7 +357,7 @@ async def change_password(data: ChangePasswordRequest, request: Request, respons
             "password_hash": hash_password(data.new_password),
             "password_changed_at": datetime.now(timezone.utc).isoformat(),
             "must_change_password": False,
-        }},
+        }, "$inc": {"token_version": 1}},
     )
 
     response.delete_cookie("access_token", path="/")

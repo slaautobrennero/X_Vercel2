@@ -31,9 +31,10 @@ Documentazione API automatica:
 ==============================================
 """
 import asyncio
+import re
+from urllib.parse import urlparse
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
 from slowapi.errors import RateLimitExceeded
@@ -42,7 +43,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 # === Core moduli ===
-from core.auth import hash_password, verify_password
+from core.auth import hash_password
 from core.config import FRONTEND_ORIGIN_REGEX, logger
 from core.db import client, db
 from core.rate_limit import limiter
@@ -71,7 +72,7 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.14.2-beta"
+APP_VERSION = "0.14.3-beta"
 APP_BUILD_DATE = "2026-02-15"
 APP_RELEASE_NAME = "Sede Nazionale"
 
@@ -147,8 +148,9 @@ async def startup():
     if migrated:
         logger.info(f"Migrazione multi-ruolo: {migrated} utenti aggiornati con campo 'ruoli'.")
 
-    admin_email = os.environ.get("ADMIN_EMAIL", "superadmin@sla.it")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "SlaAdmin2024!")
+    # SuperAdmin creato SOLO al primo avvio: la password non viene più sovrascritta ai riavvii
+    admin_email = os.environ["ADMIN_EMAIL"]
+    admin_password = os.environ["ADMIN_PASSWORD"]
 
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
@@ -163,12 +165,6 @@ async def startup():
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         logger.info(f"SuperAdmin creato: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password)}},
-        )
-        logger.info("Password SuperAdmin aggiornata")
 
     # Seed default motivi rimborso with richiede_note flag
     motivi_default = [
@@ -186,15 +182,8 @@ async def startup():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
 
-    # Remove old motivi that are not in the new list
-    await db.motivi_rimborso.delete_many({"nome": {"$nin": ["RSA", "Sede", "Altro"]}})
-
-    # Only keep A22 sede
-    await db.sedi.delete_many({"codice": {"$nin": ["A22"]}})
-
-    # Ensure A22 exists
-    existing_a22 = await db.sedi.find_one({"codice": "A22"})
-    if not existing_a22:
+    # Sede iniziale solo se non esiste ancora nessuna sede
+    if await db.sedi.count_documents({}) == 0:
         await db.sedi.insert_one({
             "nome": "Autostrada del Brennero",
             "codice": "A22",
@@ -204,31 +193,6 @@ async def startup():
             "rimborso_autostrada": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-
-    creds_path = Path("/app/memory/test_credentials.md")
-    creds_path.parent.mkdir(exist_ok=True)
-    creds_path.write_text(f"""# Test Credentials
-
-## SuperAdmin
-- Email: {admin_email}
-- Password: {admin_password}
-- Ruolo: superadmin
-
-## Auth Endpoints
-- POST /api/auth/register
-- POST /api/auth/login
-- POST /api/auth/logout
-- GET /api/auth/me
-- POST /api/auth/refresh
-
-## Sedi
-- A22 - Autostrada del Brennero
-
-## Motivi Rimborso
-- RSA (note non obbligatorie)
-- Sede (note non obbligatorie)
-- Altro (note OBBLIGATORIE)
-""")
 
     logger.info("Database inizializzato")
 
@@ -250,6 +214,22 @@ app.include_router(api_router)
 # ==================== SECURITY HEADERS MIDDLEWARE ====================
 # Aggiunge header HTTP standard per protezione contro XSS, clickjacking,
 # MIME sniffing, downgrade HTTPS. Si applicano a TUTTE le risposte.
+
+_ORIGIN_RE = re.compile(FRONTEND_ORIGIN_REGEX)
+
+
+@app.middleware("http")
+async def csrf_origin_middleware(request: Request, call_next):
+    """Blocca richieste che modificano dati provenienti da siti esterni (CSRF)."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin:
+            host = urlparse(origin).netloc
+            req_host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+            if host != req_host and not _ORIGIN_RE.fullmatch(f"{urlparse(origin).scheme}://{host}"):
+                return JSONResponse(status_code=403, content={"detail": "Origine della richiesta non consentita"})
+    return await call_next(request)
+
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):

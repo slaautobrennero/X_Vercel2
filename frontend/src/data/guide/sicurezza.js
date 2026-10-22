@@ -35,7 +35,8 @@ const guidaSicurezza = {
         { t: 'Scadenza automatica', d: 'Il pass scade dopo 24 ore; oltre una settimana devi rifare l\'accesso.' },
         { t: 'Uscita automatica', d: 'Dopo 30 minuti senza attività il portale ti disconnette, con un avviso un minuto prima. Così nessuno può usare un computer lasciato acceso.' },
         { t: 'Account bloccati subito', d: 'Se un account viene disattivato, smette di funzionare immediatamente, anche se era già collegato.' },
-        { t: 'Cambio password = uscita', d: 'Quando cambi password vieni disconnesso, così eventuali sessioni aperte altrove smettono di funzionare.' },
+        { t: 'Cambio password = uscita ovunque', d: 'Quando cambi password, o un responsabile la reimposta, vieni disconnesso da tutti i dispositivi: telefono, PC, tablet.' },
+        { t: 'Password temporanea da cambiare subito', d: 'Se ricevi una password temporanea, il portale ti obbliga a sceglierne una nuova prima di fare qualsiasi altra cosa.' },
       ],
     },
     {
@@ -46,6 +47,7 @@ const guidaSicurezza = {
       passi: [
         { t: 'Ruoli', d: 'Iscritto, Delegato, Segreteria, Segretario, Cassiere, Admin, SuperAdmin: ogni ruolo ha solo le funzioni necessarie.' },
         { t: 'Separazione tra concessionarie', d: 'I dati di una concessionaria non sono visibili alle altre. La Sede Nazionale vede tutto, ma solo in lettura.' },
+        { t: 'Nessuno può modificare chi sta "sopra"', d: 'Admin e Segretari gestiscono solo gli utenti della propria concessionaria, mai altri Admin né i propri ruoli. Le modifiche all\'IBAN vengono registrate.' },
         { t: 'Controlli sul server', d: 'Ogni permesso viene verificato dal server a ogni richiesta: nascondere un pulsante non basta, e infatti non ci affidiamo a quello.' },
       ],
     },
@@ -56,6 +58,7 @@ const guidaSicurezza = {
       intro: 'I file sono una porta d\'ingresso tipica per gli attacchi: per questo sono filtrati.',
       passi: [
         { t: 'Solo formati sicuri', d: 'Accettiamo solo PDF, JPG e PNG, fino a 5 MB.' },
+        { t: 'Contenuto verificato', d: 'Il portale controlla il contenuto reale del file, non solo il nome: un file che finge di essere un PDF viene rifiutato.' },
         { t: 'Nomi casuali', d: 'Ogni file viene rinominato con un codice casuale, così non si può indovinare o sovrascrivere.' },
         { t: 'Download controllato', d: 'Una ricevuta può essere scaricata solo da chi ne ha diritto (il richiedente e i responsabili della sua sede).' },
         { t: 'Doppia copia', d: 'Ogni file è salvato sia su disco sia nel database, quindi è incluso nei backup.' },
@@ -70,6 +73,8 @@ const guidaSicurezza = {
         { t: 'Sempre HTTPS', d: 'Tutto il traffico tra il tuo dispositivo e il portale è cifrato (il lucchetto nel browser).' },
         { t: 'Nessuna porta aperta', d: 'Il server è raggiungibile solo tramite un tunnel sicuro Cloudflare, che filtra anche gli attacchi di massa (DDoS).' },
         { t: 'Protezioni del browser', d: 'Il portale chiede al browser di bloccare trucchi noti, come mostrare il sito dentro pagine false (clickjacking) o eseguire codice non autorizzato.' },
+        { t: 'Niente azioni da siti esterni', d: 'Il portale accetta modifiche solo se arrivano dalle sue pagine: un sito malevolo aperto in un\'altra scheda non può agire al posto tuo.' },
+        { t: 'Link sicuri', d: 'Negli annunci e nei documenti sono ammessi solo link web normali (http/https): niente link che eseguono codice.' },
         { t: 'Database isolato', d: 'Il database non è raggiungibile dall\'esterno ed è protetto da password.' },
       ],
     },
@@ -125,12 +130,13 @@ const guidaSicurezza = {
       ruoliSezione: ADMIN,
       intro: 'Riepilogo tecnico delle misure, utile per audit interni o per il DPO.',
       passi: [
-        { t: 'Autenticazione', d: 'JWT HS256 in cookie httpOnly + Secure; access token 24h, refresh token 7 giorni. Hash password bcrypt.' },
+        { t: 'Autenticazione', d: 'JWT HS256 in cookie httpOnly + Secure; access token 24h, refresh 7 giorni, revocati con token_version a cambio/reset password e disattivazione. Hash bcrypt. JWT_SECRET obbligatoria (≥32 caratteri), il backend non si avvia senza.' },
         { t: '2FA', d: 'TOTP (RFC 6238) per Admin/SuperAdmin, con step-up obbligatorio su modifiche a documenti legali e impostazioni.' },
-        { t: 'Anti brute-force e rate limit', d: 'Blocco 15 min dopo 5 errori per IP+email; login 10/min, registrazione 3/ora, limite globale 200/min.' },
+        { t: 'Anti brute-force e rate limit', d: 'Blocco 15 min dopo 5 errori per IP+email; login 10/min, registrazione 3/ora, limite globale 200/min. IP reale da CF-Connecting-IP (Cloudflare).' },
+        { t: 'CSRF, XSS ed export', d: 'Controllo Origin su POST/PUT/PATCH/DELETE; link solo http(s); celle CSV/Excel che iniziano con = + - @ neutralizzate.' },
         { t: 'Header HTTP', d: 'HSTS, Content-Security-Policy, X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy, Permissions-Policy.' },
-        { t: 'Infrastruttura', d: 'Docker con rete interna; MongoDB autenticato e non esposto; segreti nel file .env; accesso SSH amministrativo solo via VPN Tailscale; esposizione pubblica solo via Cloudflare Tunnel.' },
-        { t: 'Allegati', d: 'Whitelist MIME, 5 MB, nomi UUID; copia durevole in MongoDB GridFS con cache su disco.' },
+        { t: 'Infrastruttura', d: 'Docker con rete interna; backend esposto solo su 127.0.0.1; MongoDB autenticato e non esposto; segreti nel file .env; accesso SSH amministrativo solo via VPN Tailscale; esposizione pubblica solo via Cloudflare Tunnel.' },
+        { t: 'Allegati', d: 'Verifica firma reale PDF/PNG/JPG, 5 MB, nomi UUID con estensione dal contenuto; copia durevole in MongoDB GridFS con cache su disco.' },
       ],
     },
     {
@@ -142,7 +148,7 @@ const guidaSicurezza = {
       passi: [
         { t: 'Avvisi via email', d: 'Nessun avviso automatico via email per accessi sospetti o blocchi dell\'account.' },
         { t: 'Cifratura dei singoli campi', d: 'IBAN e indirizzi sono protetti dal database e dai backup cifrati, ma non cifrati campo per campo. Prevista prima del trasferimento su server online.' },
-        { t: 'Configurazione obbligatoria', d: 'JWT_SECRET, password del SuperAdmin e chiavi hCaptcha devono essere impostati nel file .env: senza le chiavi hCaptcha la verifica anti-robot resta disattivata.' },
+        { t: 'Verifica anti-robot', d: 'Senza le chiavi hCaptcha nel file .env la verifica resta disattivata: in quel caso la Dashboard del SuperAdmin mostra un avviso.' },
       ],
     },
   ],
