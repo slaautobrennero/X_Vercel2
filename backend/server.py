@@ -46,6 +46,7 @@ from core.auth import hash_password, verify_password
 from core.config import FRONTEND_ORIGIN_REGEX, logger
 from core.db import client, db
 from core.rate_limit import limiter
+from core.storage import sync_local_to_gridfs
 from core.scheduler import _pending_reimbursements_scheduler
 
 # === Route modules ===
@@ -69,7 +70,7 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.14.0-beta"
+APP_VERSION = "0.14.1-beta"
 APP_BUILD_DATE = "2026-02-15"
 APP_RELEASE_NAME = "Sede Nazionale"
 
@@ -227,6 +228,7 @@ async def startup():
 
     # === SCHEDULER PROMEMORIA RIMBORSI PENDENTI >7gg ===
     asyncio.create_task(_pending_reimbursements_scheduler())
+    asyncio.create_task(sync_local_to_gridfs())
     logger.info("Scheduler promemoria rimborsi avviato")
 
 

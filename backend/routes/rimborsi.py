@@ -6,15 +6,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-import aiofiles
 from bson import ObjectId
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from core.audit import _log_audit
 from core.auth import get_current_user
-from core.config import UPLOAD_DIR
 from core.db import db
+from core.storage import delete_upload, get_local_path, save_upload
 from core.notifications import _notify_user, _notify_users_by_role
 from core.roles import is_sede_nazionale_member, user_has_any_role
 from models_api import RimborsoCreate, RimborsoUpdate
@@ -203,10 +202,7 @@ async def upload_ricevuta(rimborso_id: str, request: Request, file: UploadFile =
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"{file_id}.{ext}"
-    filepath = UPLOAD_DIR / filename
-
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(content)
+    await save_upload(filename, content)
 
     ricevuta = {
         "id": file_id,
@@ -247,10 +243,7 @@ async def upload_ricevute_multi(rimborso_id: str, request: Request, files: List[
         file_id = str(uuid.uuid4())
         ext = f.filename.split(".")[-1] if "." in f.filename else "pdf"
         filename = f"{file_id}.{ext}"
-        filepath = UPLOAD_DIR / filename
-
-        async with aiofiles.open(filepath, "wb") as fout:
-            await fout.write(content)
+        await save_upload(filename, content)
 
         ricevuta = {
             "id": file_id,
@@ -292,8 +285,8 @@ async def download_ricevuta(rimborso_id: str, file_id: str, request: Request):
     if not ricevuta:
         raise HTTPException(status_code=404, detail="Ricevuta non trovata")
 
-    filepath = UPLOAD_DIR / ricevuta["path"]
-    if not filepath.exists():
+    filepath = await get_local_path(ricevuta["path"])
+    if not filepath:
         raise HTTPException(status_code=404, detail="File non trovato sul server")
 
     return FileResponse(filepath, filename=ricevuta.get("filename", "ricevuta"))
@@ -321,9 +314,7 @@ async def delete_ricevuta(rimborso_id: str, file_id: str, request: Request):
     if not ricevuta:
         raise HTTPException(status_code=404, detail="Ricevuta non trovata")
 
-    filepath = UPLOAD_DIR / ricevuta["path"]
-    if filepath.exists():
-        filepath.unlink()
+    await delete_upload(ricevuta["path"])
 
     await db.rimborsi.update_one(
         {"_id": ObjectId(rimborso_id)},
@@ -358,10 +349,7 @@ async def upload_ricevuta_spesa(rimborso_id: str, request: Request, file: Upload
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"spesa_{file_id}.{ext}"
-    filepath = UPLOAD_DIR / filename
-
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(content)
+    await save_upload(filename, content)
 
     ricevuta_spesa = {
         "id": file_id,
@@ -473,10 +461,7 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
     file_id = str(uuid.uuid4())
     ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     filename = f"contabile_{file_id}.{ext}"
-    filepath = UPLOAD_DIR / filename
-
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(content)
+    await save_upload(filename, content)
 
     pagamento_diretto = rimborso.get("stato") == "in_attesa"
 

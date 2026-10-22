@@ -6,14 +6,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-import aiofiles
 from bson import ObjectId
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from core.auth import get_current_user
-from core.config import UPLOAD_DIR
 from core.db import db
+from core.storage import delete_upload, get_local_path, save_upload
 from core.notifications import _notify_all_in_sede
 from core.roles import (
     get_sede_nazionale_id,
@@ -73,10 +72,7 @@ async def create_annuncio(
         file_id = str(uuid.uuid4())
         ext = file.filename.split(".")[-1] if "." in file.filename else "pdf"
         stored_name = f"annuncio_{file_id}.{ext}"
-        filepath = UPLOAD_DIR / stored_name
-
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(content)
+        await save_upload(stored_name, content)
 
         allegato_filename = file.filename
         allegato_path = stored_name
@@ -148,8 +144,8 @@ async def download_allegato_annuncio(annuncio_id: str, request: Request):
         if annuncio.get("sede_id") and annuncio["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
 
-    filepath = UPLOAD_DIR / annuncio["allegato_path"]
-    if not filepath.exists():
+    filepath = await get_local_path(annuncio["allegato_path"])
+    if not filepath:
         raise HTTPException(status_code=404, detail="File non trovato")
 
     return FileResponse(filepath, filename=annuncio.get("allegato_filename", "allegato"))
@@ -167,9 +163,7 @@ async def delete_annuncio(annuncio_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Annuncio non trovato")
 
     if annuncio.get("allegato_path"):
-        filepath = UPLOAD_DIR / annuncio["allegato_path"]
-        if filepath.exists():
-            filepath.unlink()
+        await delete_upload(annuncio["allegato_path"])
 
     await db.annunci.delete_one({"_id": ObjectId(annuncio_id)})
 

@@ -51,6 +51,7 @@ import ProfiloPage from './pages/ProfiloPage';
 import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
 import ImpostazioniSindacatoPage from './pages/ImpostazioniSindacatoPage';
+import GuidaPage from './pages/GuidaPage';
 import { PrivacyPage, CookiePolicyPage, TerminiPage } from './pages/LegalPage';
 
 // Layout - Layout principale con sidebar
@@ -180,6 +181,7 @@ function AppRoutes() {
           </ProtectedRoute>
         } />
         <Route path="profilo" element={<ProfiloPage />} />
+        <Route path="guida" element={<GuidaPage />} />
       </Route>
 
       {/* Catch all */}

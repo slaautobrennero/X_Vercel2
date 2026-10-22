@@ -11,10 +11,8 @@ Endpoint per compliance GDPR:
 """
 import csv
 import io
-import os
 import zipfile
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Optional
 
 from bson import ObjectId
@@ -25,6 +23,7 @@ from pydantic import BaseModel
 from core.audit import _log_audit
 from core.auth import get_current_user
 from core.db import db
+from core.storage import get_local_path
 from core.legal_templates import (
     PRIVACY_TEMPLATE, COOKIE_TEMPLATE, TERMINI_TEMPLATE,
     PRIVACY_VERSION, COOKIE_VERSION, TERMINI_VERSION,
@@ -461,24 +460,6 @@ async def stato_cancellazione(request: Request):
 
 # ==================== EXPORT ZIP DATI UTENTE (art. 20 GDPR portabilità) ====================
 
-UPLOAD_DIRS = [
-    Path("/app/backend/uploads"),
-    Path("/app/uploads"),
-    Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads")),
-]
-
-
-def _find_upload_file(filename: str) -> Optional[Path]:
-    """Cerca un file di ricevuta/contabile nelle directory di upload conosciute."""
-    if not filename:
-        return None
-    for d in UPLOAD_DIRS:
-        p = d / filename
-        if p.exists() and p.is_file():
-            return p
-    return None
-
-
 @router.get("/gdpr/export-zip")
 async def export_zip(request: Request):
     """
@@ -528,7 +509,7 @@ async def export_zip(request: Request):
         zf.writestr("dati.json", json.dumps(payload, indent=2, ensure_ascii=False, default=str))
         # Aggiunge file allegati se presenti
         for fname in file_da_includere:
-            p = _find_upload_file(fname)
+            p = await get_local_path(fname) if fname else None
             if p:
                 zf.write(p, arcname=f"ricevute/{fname}")
         # Info privacy

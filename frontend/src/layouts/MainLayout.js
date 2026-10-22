@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   X as CloseIcon,
   Info,
+  BookOpen,
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -75,6 +76,7 @@ export default function MainLayout() {
     { path: '/sedi', label: 'Sedi', icon: Building2, show: canManageSedi },
     { path: '/motivi-rimborso', label: 'Motivi Rimborso', icon: Settings, show: canManageMotivi },
     { path: '/impostazioni-sindacato', label: 'Impostazioni Sindacato', icon: ShieldCheck, show: canManageImpostazioni },
+    { path: '/guida', label: 'Guide', icon: BookOpen, show: true },
   ];
 
   return (
