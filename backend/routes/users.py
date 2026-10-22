@@ -12,6 +12,7 @@ from core.auth import (
     generate_temporary_password, get_current_user, hash_password,
 )
 from core.db import db
+from core.notifications import _notify_user
 from core.rate_limit import limiter
 from core.roles import normalize_roles_input, user_has_any_role, user_has_role
 from models_api import ToggleDisableRequest, UpdateRuoliRequest, UserUpdate
@@ -162,6 +163,53 @@ async def delete_user(user_id: str, request: Request):
     )
 
     return {"message": "Utente cancellato definitivamente"}
+
+
+async def _get_registrazione_da_gestire(user_id: str, request: Request):
+    current_user = await get_current_user(request)
+    if not user_has_any_role(current_user, ["admin", "segretario", "superadmin"]):
+        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    target = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not target or target.get("stato_approvazione") != "in_attesa":
+        raise HTTPException(status_code=404, detail="Richiesta di registrazione non trovata")
+    if not user_has_role(current_user, "superadmin") and target.get("sede_id") != current_user.get("sede_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato per questa sede")
+    return current_user, target
+
+
+def _label(u: dict) -> str:
+    return f"{u.get('nome', '')} {u.get('cognome', '')} ({u.get('email', '')})".strip()
+
+
+@router.post("/users/{user_id}/approva")
+async def approva_registrazione(user_id: str, request: Request):
+    current_user, target = await _get_registrazione_da_gestire(user_id, request)
+    await db.users.update_one({"_id": target["_id"]}, {"$set": {
+        "stato_approvazione": "approvato",
+        "approvato_il": datetime.now(timezone.utc).isoformat(),
+        "approvato_da": current_user["id"],
+    }})
+    await _notify_user(user_id, {
+        "tipo": "registrazione",
+        "titolo": "Benvenuto nel portale SLA",
+        "messaggio": f"La tua registrazione è stata approvata da {current_user['nome']} {current_user['cognome']}.",
+    })
+    await _log_audit(actor=current_user, action="user.registration_approved", target_type="user",
+                     target_id=user_id, target_label=_label(target), sede_id=target.get("sede_id"),
+                     old_value="in_attesa", new_value="approvato")
+    return {"message": "Registrazione approvata"}
+
+
+@router.post("/users/{user_id}/rifiuta")
+async def rifiuta_registrazione(user_id: str, request: Request):
+    current_user, target = await _get_registrazione_da_gestire(user_id, request)
+    await db.consensi_privacy.delete_many({"user_id": target["_id"]})
+    await db.notifiche.delete_many({"user_id": user_id})
+    await db.users.delete_one({"_id": target["_id"]})
+    await _log_audit(actor=current_user, action="user.registration_rejected", target_type="user",
+                     target_id=user_id, target_label=_label(target), sede_id=target.get("sede_id"),
+                     old_value="in_attesa", note="Registrazione rifiutata: account e consensi eliminati")
+    return {"message": "Registrazione rifiutata"}
 
 
 @router.get("/users")

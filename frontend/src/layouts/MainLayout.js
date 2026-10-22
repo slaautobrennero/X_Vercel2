@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, hasAnyRole, hasRole } from '../lib/utils';
 import ContattiSidebar from '../components/ContattiSidebar';
+import { InattivitaLogout } from '../components/InattivitaLogout';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -268,6 +269,7 @@ export default function MainLayout() {
             </div>
           )}
           <Outlet />
+          <InattivitaLogout />
         </main>
 
         {/* Footer con link legali */}

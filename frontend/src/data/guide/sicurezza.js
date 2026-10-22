@@ -21,6 +21,7 @@ const guidaSicurezza = {
         { t: 'Blocco dopo 5 errori', d: 'Chi prova a indovinare la password viene fermato per 15 minuti.' },
         { t: 'Limite di richieste', d: 'Il portale rallenta chi fa troppe richieste in poco tempo, bloccando i programmi automatici.' },
         { t: 'Verifica anti-robot', d: 'La registrazione è protetta da hCaptcha, che distingue le persone dai bot.' },
+        { t: 'Approvazione delle registrazioni', d: 'Un nuovo account non può entrare finché la segreteria della sua concessionaria non conferma che è davvero un iscritto.' },
         { t: 'Verifica in due passaggi', d: 'Per i ruoli con più poteri (Admin, SuperAdmin) è disponibile il codice dal telefono, chiesto anche per le operazioni più delicate.' },
       ],
     },
@@ -32,6 +33,8 @@ const guidaSicurezza = {
       passi: [
         { t: 'Pass protetto', d: 'Il pass è salvato in un cookie protetto che i programmi nella pagina non possono leggere o rubare, e viaggia solo su connessione cifrata.' },
         { t: 'Scadenza automatica', d: 'Il pass scade dopo 24 ore; oltre una settimana devi rifare l\'accesso.' },
+        { t: 'Uscita automatica', d: 'Dopo 30 minuti senza attività il portale ti disconnette, con un avviso un minuto prima. Così nessuno può usare un computer lasciato acceso.' },
+        { t: 'Account bloccati subito', d: 'Se un account viene disattivato, smette di funzionare immediatamente, anche se era già collegato.' },
         { t: 'Cambio password = uscita', d: 'Quando cambi password vieni disconnesso, così eventuali sessioni aperte altrove smettono di funzionare.' },
       ],
     },
@@ -137,10 +140,8 @@ const guidaSicurezza = {
       ruoliSezione: ADMIN,
       intro: 'Per trasparenza, ecco cosa non è ancora presente o dipende dalla configurazione.',
       passi: [
-        { t: 'Disconnessione per inattività', d: 'Non ancora attiva (prevista: uscita automatica dopo 30 minuti).' },
         { t: 'Avvisi via email', d: 'Nessun avviso automatico via email per accessi sospetti o blocchi dell\'account.' },
-        { t: 'Approvazione delle registrazioni', d: 'I nuovi account sono attivi subito (solo come Iscritto o Delegato): eventuali abusi si gestiscono disabilitando l\'account.' },
-        { t: 'Cifratura dei singoli campi', d: 'IBAN e indirizzi sono protetti dal database e dai backup cifrati, ma non cifrati campo per campo.' },
+        { t: 'Cifratura dei singoli campi', d: 'IBAN e indirizzi sono protetti dal database e dai backup cifrati, ma non cifrati campo per campo. Prevista prima del trasferimento su server online.' },
         { t: 'Configurazione obbligatoria', d: 'JWT_SECRET, password del SuperAdmin e chiavi hCaptcha devono essere impostati nel file .env: senza le chiavi hCaptcha la verifica anti-robot resta disattivata.' },
       ],
     },

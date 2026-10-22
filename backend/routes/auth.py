@@ -16,6 +16,7 @@ from core.auth import (
 from core.captcha import verify_hcaptcha
 from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.db import db
+from core.notifications import _notify_users_by_role
 from core.rate_limit import limiter
 from core.roles import user_has_any_role
 from models_api import (
@@ -85,6 +86,7 @@ async def register(user_data: UserCreate, request: Request, response: Response):
         "ruoli": [ruolo],
         "sede_id": user_data.sede_id,
         "disabled": False,
+        "stato_approvazione": "in_attesa",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -103,16 +105,22 @@ async def register(user_data: UserCreate, request: Request, response: Response):
         "user_agent": request.headers.get("user-agent", "")[:500],
     })
 
-    access_token = create_access_token(user_id, email)
-    refresh_token = create_refresh_token(user_id)
+    notifica = {
+        "tipo": "registrazione",
+        "titolo": "Nuova registrazione da approvare",
+        "messaggio": f"{user_data.nome} {user_data.cognome} ({email}) chiede di accedere come {ruolo}. Vai in Utenti per approvare o rifiutare.",
+        "link": "/utenti",
+    }
+    if user_data.sede_id:
+        await _notify_users_by_role(["segretario", "admin"], user_data.sede_id, notifica)
+    await _notify_users_by_role(["superadmin"], None, notifica)
 
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=86400, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
-
-    user_doc["id"] = user_id
-    user_doc.pop("password_hash")
-    user_doc.pop("_id", None)
-    return user_doc
+    return {
+        "message": "Registrazione inviata. Potrai accedere dopo l'approvazione della tua sede.",
+        "id": user_id,
+        "email": email,
+        "stato_approvazione": "in_attesa",
+    }
 
 
 @router.post("/auth/login")
@@ -137,6 +145,9 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
             upsert=True,
         )
         raise HTTPException(status_code=401, detail="Credenziali non valide")
+
+    if user.get("stato_approvazione") == "in_attesa":
+        raise HTTPException(status_code=403, detail="Registrazione in attesa di approvazione. Riceverai l'accesso appena la tua sede la approva.")
 
     if user.get("disabled", False):
         raise HTTPException(status_code=403, detail="Account disattivato. Contatta l'amministratore.")
@@ -309,7 +320,7 @@ async def refresh_token(request: Request, response: Response):
             raise HTTPException(status_code=401, detail="Token non valido")
         user_id = payload["sub"]
         user = await db.users.find_one({"_id": ObjectId(user_id)})
-        if not user:
+        if not user or user.get("disabled") or user.get("stato_approvazione") == "in_attesa":
             raise HTTPException(status_code=401, detail="Utente non trovato")
         access_token = create_access_token(user_id, user["email"])
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=86400, path="/")

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { formatApiErrorDetail } from '../lib/utils';
-import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Clock } from 'lucide-react';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 import axios from 'axios';
 
@@ -34,8 +34,8 @@ export default function RegisterPage() {
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [terminiAccepted, setTerminiAccepted] = useState(false);
   const captchaRef = useRef(null);
+  const [inAttesa, setInAttesa] = useState(false);
   const { register } = useAuth();
-  const navigate = useNavigate();
 
   const isDelegato = formData.ruolo === 'delegato';
 
@@ -121,7 +121,7 @@ export default function RegisterPage() {
       registerData.termini_accepted = true;
       registerData.privacy_version = '1.0';
       await register(registerData);
-      navigate('/');
+      setInAttesa(true);
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
       // Reset captcha on error (token è single-use)
@@ -133,6 +133,21 @@ export default function RegisterPage() {
       setLoading(false);
     }
   };
+
+  if (inAttesa) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-6" data-testid="register-pending">
+        <div className="bg-white border border-gray-200 rounded-xl p-8 max-w-md w-full text-center">
+          <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-4"><Clock size={28} /></div>
+          <h1 className="text-2xl font-bold text-gray-900 font-['Manrope']">Registrazione inviata</h1>
+          <p className="text-gray-600 mt-2 text-sm">La tua richiesta è stata inviata alla segreteria della tua concessionaria. Potrai accedere appena verrà approvata.</p>
+          <Link to="/login" className="inline-block mt-6 px-5 py-2 rounded-lg bg-[#1E4D8C] hover:bg-[#163A6A] text-white font-medium transition-colors" data-testid="register-pending-login-link">
+            Torna all'accesso
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex" data-testid="register-page">

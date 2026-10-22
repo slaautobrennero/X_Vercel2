@@ -70,7 +70,7 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.14.1-beta"
+APP_VERSION = "0.14.2-beta"
 APP_BUILD_DATE = "2026-02-15"
 APP_RELEASE_NAME = "Sede Nazionale"
 

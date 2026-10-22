@@ -20,6 +20,7 @@ const guidaIscritto = {
         { t: 'Seleziona la tua Concessionaria e il Ruolo', d: 'Scegli la concessionaria in cui lavori. Come ruolo scegli "Iscritto"; scegli "Delegato" solo se sei delegato sindacale (ti verranno chiesti anche indirizzo e IBAN per i rimborsi).' },
         { t: 'Verifica anti-robot', d: 'Completa il riquadro "Non sono un robot": serve a bloccare le registrazioni automatiche.' },
         { t: 'Accetta Privacy e Termini', d: 'Leggi e spunta l\'Informativa sulla Privacy e i Termini di Servizio, poi conferma.', btn: 'Registrati' },
+        { t: 'Attendi l\'approvazione', d: 'La segreteria della tua concessionaria controlla la richiesta. Appena viene approvata puoi accedere con email e password.' },
       ],
       nota: { tipo: 'info', testo: 'Altri ruoli (Segreteria, Segretario, Cassiere, Admin) non si scelgono in registrazione: li assegna il responsabile della tua sede.' },
     },
@@ -32,6 +33,7 @@ const guidaIscritto = {
         { t: 'Inserisci email e password', d: 'Nella pagina di accesso scrivi le tue credenziali.', btn: 'Accedi' },
         { t: 'Codice 2FA (solo se attivo)', d: 'Se hai attivato la verifica in due passaggi, ti verrà chiesto un codice di 6 cifre dall\'app sul telefono.', btn: 'Verifica codice' },
         { t: 'Esci quando hai finito', d: 'Soprattutto su computer condivisi, apri il menu in alto a destra e premi Esci.', btn: 'Esci' },
+        { t: 'Uscita automatica', d: 'Dopo 30 minuti senza attività il portale ti disconnette da solo. Un minuto prima compare l\'avviso "Sei ancora lì?".', btn: 'Resta collegato' },
       ],
       nota: { tipo: 'attenzione', testo: 'Dopo 5 tentativi sbagliati l\'accesso viene bloccato per 15 minuti: è una protezione contro chi prova a indovinare le password.' },
     },
@@ -104,6 +106,7 @@ const guidaIscritto = {
   ],
   faq: [
     { d: 'Ho dimenticato la password, cosa faccio?', r: 'Contatta il Segretario o l\'Admin della tua sede: può generarti una password temporanea. Appena entri, cambiala dal Profilo.' },
+    { d: 'Mi sono registrato ma non riesco a entrare.', r: 'Probabilmente la registrazione è ancora in attesa di approvazione. Se passa troppo tempo, contatta la segreteria della tua concessionaria.' },
     { d: 'Il portale dice che l\'accesso è bloccato.', r: 'Hai sbagliato la password troppe volte. Aspetta 15 minuti e riprova con calma.' },
     { d: 'Perché non vedo la voce "Rimborsi"?', r: 'I rimborsi chilometrici sono riservati ai delegati e ai ruoli sindacali. Se sei delegato ma non la vedi, chiedi al responsabile della tua sede di aggiornare il tuo ruolo.' },
     { d: 'Ho cambiato concessionaria: come aggiorno il profilo?', r: 'La concessionaria la può cambiare solo un responsabile: scrivi al Segretario o all\'Admin.' },

@@ -16,6 +16,8 @@ const ACTION_META = {
   'user.disable':         { label: 'Disattivato',        color: 'bg-yellow-100 text-yellow-800', Icon: Power },
   'user.enable':          { label: 'Riattivato',         color: 'bg-green-100 text-green-800',   Icon: Power },
   'user.delete':          { label: 'Cancellato',         color: 'bg-red-100 text-red-800',       Icon: Trash2 },
+  'user.registration_approved': { label: 'Registrazione approvata', color: 'bg-green-100 text-green-800', Icon: Check },
+  'user.registration_rejected': { label: 'Registrazione rifiutata', color: 'bg-red-100 text-red-800', Icon: XIcon },
   'user.change_role':     { label: 'Cambio ruolo',       color: 'bg-blue-100 text-blue-800',     Icon: Shield },
 };
 

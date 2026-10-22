@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { RUOLI, RUOLO_BADGE_COLOR, formatDate, hasRole, hasAnyRole, getUserRoles } from '../lib/utils';
 import axios from 'axios';
+import { RegistrazioniInAttesa } from '../components/RegistrazioniInAttesa';
 import { Users, Search, Shield, KeyRound, Copy, X, Check, Power, Trash2, AlertTriangle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -152,7 +153,8 @@ export default function UtentiPage() {
     }
   };
 
-  const filteredUsers = users.filter(u => {
+  const inAttesa = users.filter(u => u.stato_approvazione === 'in_attesa');
+  const filteredUsers = users.filter(u => u.stato_approvazione !== 'in_attesa').filter(u => {
     const matchesSearch =
       u.nome?.toLowerCase().includes(search.toLowerCase()) ||
       u.cognome?.toLowerCase().includes(search.toLowerCase()) ||
@@ -196,6 +198,10 @@ export default function UtentiPage() {
         <h1 className="text-2xl font-bold text-gray-900 font-['Manrope']">Utenti</h1>
         <p className="text-gray-600 mt-1">Gestione degli iscritti</p>
       </div>
+
+      {hasAnyRole(user, ['admin', 'segretario', 'superadmin']) && (
+        <RegistrazioniInAttesa utenti={inAttesa} onChange={fetchUsers} />
+      )}
 
       {/* Search + Filtro Sede */}
       <div className="flex flex-col sm:flex-row gap-3">
