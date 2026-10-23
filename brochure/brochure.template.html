@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Brochure Portale SLA - CISAL</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  :root { --blu: #1E4D8C; --blu-scuro: #143766; --oro: #E8A33D; --testo: #1f2937; --grigio: #5b6472; --linea: #e3e7ee; --chiaro: #F2F5FA; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "IBM Plex Sans", Arial, sans-serif; color: var(--testo); background: #8a919c; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3, .num { font-family: Manrope, Arial, sans-serif; }
+  .foglio { width: 297mm; height: 210mm; display: flex; background: #fff; margin: 10mm auto; page-break-after: always; box-shadow: 0 6px 30px rgba(0,0,0,.25); }
+  @media print { body { background: #fff; } .foglio { margin: 0; box-shadow: none; } }
+  .pagina { width: 148.5mm; height: 210mm; padding: 13mm 12mm 11mm; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .pagina + .pagina { border-left: 0.3mm dashed #cfd5df; }
+  .etichetta { font: 600 7.5pt "IBM Plex Sans"; letter-spacing: .16em; text-transform: uppercase; color: var(--blu); margin-bottom: 2.5mm; }
+  h2 { font-size: 17pt; line-height: 1.1; color: var(--blu-scuro); margin-bottom: 5mm; }
+  p { font-size: 9.5pt; line-height: 1.5; }
+  .ic { width: 9.5mm; height: 9.5mm; border-radius: 2.5mm; background: var(--chiaro); color: var(--blu); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .ic svg { width: 5.2mm; height: 5.2mm; }
+  .voce { display: flex; gap: 3.5mm; align-items: flex-start; margin-bottom: 4mm; }
+  .voce b { display: block; font-size: 10pt; margin-bottom: .6mm; }
+  .voce span { font-size: 9pt; line-height: 1.45; color: var(--grigio); }
+  .num { flex: 0 0 7mm; height: 7mm; border-radius: 50%; background: var(--blu); color: #fff; font-weight: 800; font-size: 9.5pt; display: flex; align-items: center; justify-content: center; }
+  .passi { position: relative; }
+  .passi::before { content: ""; position: absolute; left: 3.35mm; top: 3mm; bottom: 4mm; width: .4mm; background: var(--linea); }
+  .passo { position: relative; display: flex; gap: 3.5mm; margin-bottom: 3.6mm; }
+  .passo p { font-size: 9.3pt; padding-top: .7mm; }
+  .box { border-radius: 3mm; padding: 3.5mm 4mm; font-size: 8.8pt; line-height: 1.45; display: flex; gap: 3mm; align-items: flex-start; }
+  .box svg { width: 4.6mm; height: 4.6mm; flex: 0 0 auto; margin-top: .3mm; }
+  .box.blu { background: var(--chiaro); color: var(--blu-scuro); }
+  .box.oro { background: #FDF3E3; color: #7a4a06; border: .3mm solid #F3D29E; }
+  .sep { height: .3mm; background: var(--linea); margin: 5mm 0; }
+  .piede { margin-top: auto; font-size: 7.5pt; color: #8a919c; display: flex; justify-content: space-between; }
+
+  /* Copertina */
+  .copertina { padding: 0; background: var(--blu); color: #fff; }
+  .copertina .alto { padding: 14mm 12mm 0; }
+  .marchio { display: flex; align-items: center; gap: 3mm; }
+  .marchio .logo { width: 13mm; height: 13mm; border-radius: 3mm; background: #fff; color: var(--blu); font: 800 12pt Manrope; display: flex; align-items: center; justify-content: center; letter-spacing: -.04em; }
+  .marchio small { display: block; font-size: 7.5pt; opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  .marchio strong { font: 800 11pt Manrope; }
+  .copertina h1 { font-size: 34pt; line-height: 1; margin-top: 30mm; letter-spacing: -.02em; }
+  .copertina h1 em { font-style: normal; color: var(--oro); }
+  .copertina .claim { font: 500 13pt Manrope; margin-top: 5mm; opacity: .95; line-height: 1.3; }
+  .strada { position: absolute; left: 0; right: 0; bottom: 52mm; height: 22mm; }
+  .copertina .intro { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; color: var(--testo); padding: 8mm 12mm 9mm; border-top-left-radius: 9mm; }
+  .copertina .intro p { font-size: 9.6pt; }
+  .copertina .sito { margin-top: 4mm; display: flex; justify-content: space-between; align-items: center; font: 700 10.5pt Manrope; color: var(--blu); }
+  .copertina .sito span { font: 500 8pt "IBM Plex Sans"; color: var(--grigio); }
+
+  /* Rimborsi */
+  .stati { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; margin: 1mm 0 4mm; }
+  .stato { border-radius: 2mm; padding: 2mm 1mm; text-align: center; font-size: 8pt; font-weight: 600; border: .3mm solid; }
+  .s-attesa { background: #fff; border-color: #cfd5df; color: #374151; }
+  .s-appr { background: #FEF3C7; border-color: #FCD34D; color: #854d0e; }
+  .s-pag { background: #DCFCE7; border-color: #86EFAC; color: #166534; }
+  .s-rif { background: #FEE2E2; border-color: #FCA5A5; color: #991b1b; }
+  .griglia2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5mm 4mm; }
+  .griglia2 .voce { margin: 0; }
+
+  /* Retro */
+  .qr { display: flex; gap: 4mm; align-items: center; background: var(--chiaro); border-radius: 3mm; padding: 4mm; }
+  .qr .codice { width: 24mm; height: 24mm; background: #fff; padding: 1.5mm; border-radius: 2mm; flex: 0 0 auto; }
+  .qr .codice svg { width: 100%; height: 100%; }
+  .qr b { font: 800 11pt Manrope; color: var(--blu-scuro); display: block; }
+  .qr span { font-size: 8.8pt; color: var(--grigio); }
+</style>
+</head>
+<body>
+
+<!-- FOGLIO 1 (esterno): pagina 4 | pagina 1 -->
+<div class="foglio">
+  <section class="pagina">
+    <div class="etichetta">I tuoi dati sono al sicuro</div>
+    <h2>Sicurezza e protezione dei dati</h2>
+    <div class="griglia2">
+      <div class="voce"><div class="ic">{{Lock}}</div><div><b>Password protetta</b><span>Viene cifrata: nessuno può leggerla, nemmeno gli amministratori.</span></div></div>
+      <div class="voce"><div class="ic">{{EyeOff}}</div><div><b>Ognuno vede il suo</b><span>Ogni concessionaria vede solo i propri dati, ogni persona solo ciò che le spetta.</span></div></div>
+      <div class="voce"><div class="ic">{{Smartphone}}</div><div><b>Doppia verifica</b><span>Chi gestisce dati e pagamenti entra anche con un codice dal telefono.</span></div></div>
+      <div class="voce"><div class="ic">{{Timer}}</div><div><b>Uscita automatica</b><span>Dopo 30 minuti senza attività il portale ti scollega da solo.</span></div></div>
+      <div class="voce"><div class="ic">{{DatabaseBackup}}</div><div><b>Connessione e copie cifrate</b><span>I dati viaggiano protetti e le copie di sicurezza sono illeggibili a estranei.</span></div></div>
+      <div class="voce"><div class="ic">{{Scale}}</div><div><b>Privacy (GDPR)</b><span>Dal tuo Profilo scarichi i tuoi dati o chiedi la cancellazione.</span></div></div>
+    </div>
+    <div class="box oro" style="margin-top:5mm">{{ShieldCheck}}<div><b>Il sindacato non ti chiederà mai la password</b>, né per email né per telefono. Se qualcuno lo fa, è una truffa: avvisa la tua segreteria.</div></div>
+    <div class="sep"></div>
+    <div class="etichetta">Hai bisogno di aiuto?</div>
+    <p style="margin-bottom:4mm">Nel portale trovi la sezione <b>Guide</b> con le istruzioni passo passo per il tuo ruolo. Per qualsiasi dubbio rivolgiti alla <b>segreteria della tua concessionaria</b>.</p>
+    <div class="qr">
+      <div class="codice">{{QR}}</div>
+      <div><b>Inquadra e apri il portale</b><span>Con la fotocamera del telefono, oppure scrivi<br><b style="display:inline;font-size:9.5pt">www.portale-sla.it</b></span></div>
+    </div>
+    <div class="piede"><span>SLA · CISAL — Sindacato Lavoratori Autostradali</span><span>4</span></div>
+  </section>
+
+  <section class="pagina copertina">
+    <div class="alto">
+      <div class="marchio"><div class="logo">SLA</div><div><small>CISAL</small><strong>Sindacato Lavoratori Autostradali</strong></div></div>
+      <h1>Il Portale<br><em>SLA</em></h1>
+      <p class="claim">Rimborsi, documenti e comunicazioni.<br>Tutto in ordine, in un unico posto.</p>
+    </div>
+    <svg class="strada" viewBox="0 0 560 80" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 62 C140 62 200 18 330 18 S500 40 560 30" stroke="rgba(255,255,255,.18)" stroke-width="22" fill="none"/>
+      <path d="M0 62 C140 62 200 18 330 18 S500 40 560 30" stroke="#E8A33D" stroke-width="2.2" stroke-dasharray="14 12" fill="none"/>
+    </svg>
+    <div class="intro">
+      <div class="etichetta">Perché un portale</div>
+      <p>Il portale nasce per <b>mettere ordine</b>: ogni rimborso, ogni documento e ogni pagamento viene registrato in modo chiaro, completo e verificabile.</p>
+      <p style="margin-top:2.5mm">Per le <b>concessionarie</b> significa tenere davvero sotto controllo i costi. Per il <b>Nazionale</b> significa avere finalmente una visione d'insieme, concreta e sempre aggiornata.</p>
+      <div class="sito">www.portale-sla.it <span>Da computer, tablet e smartphone</span></div>
+    </div>
+  </section>
+</div>
+
+<!-- FOGLIO 2 (interno): pagina 2 | pagina 3 -->
+<div class="foglio">
+  <section class="pagina">
+    <div class="etichetta">A cosa serve</div>
+    <h2>Meno carta, più chiarezza</h2>
+    <div class="voce"><div class="ic">{{FolderCheck}}</div><div><b>Tutto in ordine</b><span>Rimborsi, ricevute, modulistica e comunicazioni in un solo posto, sempre consultabili.</span></div></div>
+    <div class="voce"><div class="ic">{{TrendingDown}}</div><div><b>Costi sotto controllo</b><span>Chilometri calcolati in automatico, importi chiari e ogni spesa documentata.</span></div></div>
+    <div class="voce"><div class="ic">{{Building2}}</div><div><b>Ogni concessionaria la sua area</b><span>Ogni sede gestisce i propri iscritti, rimborsi e documenti.</span></div></div>
+    <div class="voce"><div class="ic">{{Globe}}</div><div><b>Visione nazionale</b><span>Il Nazionale vede l'insieme delle concessionarie e comunica con tutti in un attimo.</span></div></div>
+    <div class="sep" style="margin:2mm 0 5mm"></div>
+    <div class="etichetta">Come registrarsi</div>
+    <h2 style="font-size:14pt;margin-bottom:4mm">Cinque passi, pochi minuti</h2>
+    <div class="passi">
+      <div class="passo"><div class="num">1</div><p>Vai su <b>www.portale-sla.it</b> e premi <b>Registrati</b>.</p></div>
+      <div class="passo"><div class="num">2</div><p>Inserisci i tuoi dati, scegli la <b>tua concessionaria</b> e il ruolo: <b>Iscritto</b> o <b>Delegato</b>.</p></div>
+      <div class="passo"><div class="num">3</div><p>Accetta l'informativa privacy e spunta <b>"Non sono un robot"</b>.</p></div>
+      <div class="passo"><div class="num">4</div><p>Attendi l'<b>approvazione</b> della segreteria della tua concessionaria.</p></div>
+      <div class="passo"><div class="num">5</div><p>Accedi con <b>email e password</b>. Fatto!</p></div>
+    </div>
+    <div class="box blu">{{KeyRound}}<div>Scegli una password che conosci solo tu: <b>almeno 8 caratteri</b>, con lettere, numeri e un simbolo (es. ! ? #).</div></div>
+    <div class="piede"><span>Il Portale SLA</span><span>2</span></div>
+  </section>
+
+  <section class="pagina">
+    <div class="etichetta">Per i delegati</div>
+    <h2>Rimborsi chilometrici, senza fogli</h2>
+    <div class="passi">
+      <div class="passo"><div class="num">1</div><p><b>Partenza e destinazione.</b> I chilometri li calcola il portale con Google Maps, andata e ritorno.</p></div>
+      <div class="passo"><div class="num">2</div><p><b>Pedaggi e pasti</b>, se previsti dalla tua sede: basta una <b>foto delle ricevute</b> dal telefono.</p></div>
+      <div class="passo"><div class="num">3</div><p><b>Controlla l'importo e invia.</b> Il calcolo è automatico, con la tariffa della tua concessionaria.</p></div>
+      <div class="passo"><div class="num">4</div><p><b>Segui la richiesta</b> fino al pagamento: ricevi una notifica a ogni passaggio.</p></div>
+    </div>
+    <div class="stati">
+      <div class="stato s-attesa">In attesa</div><div class="stato s-appr">Approvato</div><div class="stato s-pag">Pagato</div><div class="stato s-rif">Rifiutato</div>
+    </div>
+    <div class="sep" style="margin:1mm 0 5mm"></div>
+    <div class="etichetta">Per tutti</div>
+    <h2 style="font-size:14pt;margin-bottom:4mm">Documenti e storico pagamenti</h2>
+    <div class="voce"><div class="ic">{{FileText}}</div><div><b>Modulistica sempre aggiornata</b><span>I documenti del sindacato, pronti da scaricare quando servono.</span></div></div>
+    <div class="voce"><div class="ic">{{Megaphone}}</div><div><b>Bacheca</b><span>Le comunicazioni della tua concessionaria e del Nazionale, con gli allegati.</span></div></div>
+    <div class="voce"><div class="ic">{{History}}</div><div><b>Storico dei rimborsi</b><span>Tutte le richieste con date, importi e la ricevuta del bonifico, filtrabili per periodo.</span></div></div>
+    <div class="voce"><div class="ic">{{Bell}}</div><div><b>Notifiche</b><span>Un avviso quando arriva un nuovo comunicato, un documento o un pagamento.</span></div></div>
+    <div class="piede"><span>Il Portale SLA</span><span>3</span></div>
+  </section>
+</div>
+
+</body>
+</html>

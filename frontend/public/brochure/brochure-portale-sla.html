@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Brochure Portale SLA - CISAL</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  :root { --blu: #1E4D8C; --blu-scuro: #143766; --oro: #E8A33D; --testo: #1f2937; --grigio: #5b6472; --linea: #e3e7ee; --chiaro: #F2F5FA; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "IBM Plex Sans", Arial, sans-serif; color: var(--testo); background: #8a919c; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3, .num { font-family: Manrope, Arial, sans-serif; }
+  .foglio { width: 297mm; height: 210mm; display: flex; background: #fff; margin: 10mm auto; page-break-after: always; box-shadow: 0 6px 30px rgba(0,0,0,.25); }
+  @media print { body { background: #fff; } .foglio { margin: 0; box-shadow: none; } }
+  .pagina { width: 148.5mm; height: 210mm; padding: 13mm 12mm 11mm; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .pagina + .pagina { border-left: 0.3mm dashed #cfd5df; }
+  .etichetta { font: 600 7.5pt "IBM Plex Sans"; letter-spacing: .16em; text-transform: uppercase; color: var(--blu); margin-bottom: 2.5mm; }
+  h2 { font-size: 17pt; line-height: 1.1; color: var(--blu-scuro); margin-bottom: 5mm; }
+  p { font-size: 9.5pt; line-height: 1.5; }
+  .ic { width: 9.5mm; height: 9.5mm; border-radius: 2.5mm; background: var(--chiaro); color: var(--blu); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .ic svg { width: 5.2mm; height: 5.2mm; }
+  .voce { display: flex; gap: 3.5mm; align-items: flex-start; margin-bottom: 4mm; }
+  .voce b { display: block; font-size: 10pt; margin-bottom: .6mm; }
+  .voce span { font-size: 9pt; line-height: 1.45; color: var(--grigio); }
+  .num { flex: 0 0 7mm; height: 7mm; border-radius: 50%; background: var(--blu); color: #fff; font-weight: 800; font-size: 9.5pt; display: flex; align-items: center; justify-content: center; }
+  .passi { position: relative; }
+  .passi::before { content: ""; position: absolute; left: 3.35mm; top: 3mm; bottom: 4mm; width: .4mm; background: var(--linea); }
+  .passo { position: relative; display: flex; gap: 3.5mm; margin-bottom: 3.6mm; }
+  .passo p { font-size: 9.3pt; padding-top: .7mm; }
+  .box { border-radius: 3mm; padding: 3.5mm 4mm; font-size: 8.8pt; line-height: 1.45; display: flex; gap: 3mm; align-items: flex-start; }
+  .box svg { width: 4.6mm; height: 4.6mm; flex: 0 0 auto; margin-top: .3mm; }
+  .box.blu { background: var(--chiaro); color: var(--blu-scuro); }
+  .box.oro { background: #FDF3E3; color: #7a4a06; border: .3mm solid #F3D29E; }
+  .sep { height: .3mm; background: var(--linea); margin: 5mm 0; }
+  .piede { margin-top: auto; font-size: 7.5pt; color: #8a919c; display: flex; justify-content: space-between; }
+
+  /* Copertina */
+  .copertina { padding: 0; background: var(--blu); color: #fff; }
+  .copertina .alto { padding: 14mm 12mm 0; }
+  .marchio { display: flex; align-items: center; gap: 3mm; }
+  .marchio .logo { width: 13mm; height: 13mm; border-radius: 3mm; background: #fff; color: var(--blu); font: 800 12pt Manrope; display: flex; align-items: center; justify-content: center; letter-spacing: -.04em; }
+  .marchio small { display: block; font-size: 7.5pt; opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  .marchio strong { font: 800 11pt Manrope; }
+  .copertina h1 { font-size: 34pt; line-height: 1; margin-top: 30mm; letter-spacing: -.02em; }
+  .copertina h1 em { font-style: normal; color: var(--oro); }
+  .copertina .claim { font: 500 13pt Manrope; margin-top: 5mm; opacity: .95; line-height: 1.3; }
+  .strada { position: absolute; left: 0; right: 0; bottom: 52mm; height: 22mm; }
+  .copertina .intro { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; color: var(--testo); padding: 8mm 12mm 9mm; border-top-left-radius: 9mm; }
+  .copertina .intro p { font-size: 9.6pt; }
+  .copertina .sito { margin-top: 4mm; display: flex; justify-content: space-between; align-items: center; font: 700 10.5pt Manrope; color: var(--blu); }
+  .copertina .sito span { font: 500 8pt "IBM Plex Sans"; color: var(--grigio); }
+
+  /* Rimborsi */
+  .stati { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; margin: 1mm 0 4mm; }
+  .stato { border-radius: 2mm; padding: 2mm 1mm; text-align: center; font-size: 8pt; font-weight: 600; border: .3mm solid; }
+  .s-attesa { background: #fff; border-color: #cfd5df; color: #374151; }
+  .s-appr { background: #FEF3C7; border-color: #FCD34D; color: #854d0e; }
+  .s-pag { background: #DCFCE7; border-color: #86EFAC; color: #166534; }
+  .s-rif { background: #FEE2E2; border-color: #FCA5A5; color: #991b1b; }
+  .griglia2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5mm 4mm; }
+  .griglia2 .voce { margin: 0; }
+
+  /* Retro */
+  .qr { display: flex; gap: 4mm; align-items: center; background: var(--chiaro); border-radius: 3mm; padding: 4mm; }
+  .qr .codice { width: 24mm; height: 24mm; background: #fff; padding: 1.5mm; border-radius: 2mm; flex: 0 0 auto; }
+  .qr .codice svg { width: 100%; height: 100%; }
+  .qr b { font: 800 11pt Manrope; color: var(--blu-scuro); display: block; }
+  .qr span { font-size: 8.8pt; color: var(--grigio); }
+</style>
+</head>
+<body>
+
+<!-- FOGLIO 1 (esterno): pagina 4 | pagina 1 -->
+<div class="foglio">
+  <section class="pagina">
+    <div class="etichetta">I tuoi dati sono al sicuro</div>
+    <h2>Sicurezza e protezione dei dati</h2>
+    <div class="griglia2">
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-lock" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div><div><b>Password protetta</b><span>Viene cifrata: nessuno può leggerla, nemmeno gli amministratori.</span></div></div>
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"></path><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"></path><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"></path><path d="m2 2 20 20"></path></svg></div><div><b>Ognuno vede il suo</b><span>Ogni concessionaria vede solo i propri dati, ogni persona solo ciò che le spetta.</span></div></div>
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-smartphone" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg></div><div><b>Doppia verifica</b><span>Chi gestisce dati e pagamenti entra anche con un codice dal telefono.</span></div></div>
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-timer" aria-hidden="true"><line x1="10" x2="14" y1="2" y2="2"></line><line x1="12" x2="15" y1="14" y2="11"></line><circle cx="12" cy="14" r="8"></circle></svg></div><div><b>Uscita automatica</b><span>Dopo 30 minuti senza attività il portale ti scollega da solo.</span></div></div>
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database-backup" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 12a9 3 0 0 0 5 2.69"></path><path d="M21 9.3V5"></path><path d="M3 5v14a9 3 0 0 0 6.47 2.88"></path><path d="M12 12v4h4"></path><path d="M13 20a5 5 0 0 0 9-3 4.5 4.5 0 0 0-4.5-4.5c-1.33 0-2.54.54-3.41 1.41L12 16"></path></svg></div><div><b>Connessione e copie cifrate</b><span>I dati viaggiano protetti e le copie di sicurezza sono illeggibili a estranei.</span></div></div>
+      <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scale" aria-hidden="true"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="M7 21h10"></path><path d="M12 3v18"></path><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"></path></svg></div><div><b>Privacy (GDPR)</b><span>Dal tuo Profilo scarichi i tuoi dati o chiedi la cancellazione.</span></div></div>
+    </div>
+    <div class="box oro" style="margin-top:5mm"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-check" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg><div><b>Il sindacato non ti chiederà mai la password</b>, né per email né per telefono. Se qualcuno lo fa, è una truffa: avvisa la tua segreteria.</div></div>
+    <div class="sep"></div>
+    <div class="etichetta">Hai bisogno di aiuto?</div>
+    <p style="margin-bottom:4mm">Nel portale trovi la sezione <b>Guide</b> con le istruzioni passo passo per il tuo ruolo. Per qualsiasi dubbio rivolgiti alla <b>segreteria della tua concessionaria</b>.</p>
+    <div class="qr">
+      <div class="codice"><svg  version="1.1" viewBox="0 0 27 27" xmlns="http://www.w3.org/2000/svg"><path d="M1,1H2V2H1zM2,1H3V2H2zM3,1H4V2H3zM4,1H5V2H4zM5,1H6V2H5zM6,1H7V2H6zM7,1H8V2H7zM9,1H10V2H9zM12,1H13V2H12zM15,1H16V2H15zM19,1H20V2H19zM20,1H21V2H20zM21,1H22V2H21zM22,1H23V2H22zM23,1H24V2H23zM24,1H25V2H24zM25,1H26V2H25zM1,2H2V3H1zM7,2H8V3H7zM9,2H10V3H9zM10,2H11V3H10zM11,2H12V3H11zM14,2H15V3H14zM17,2H18V3H17zM19,2H20V3H19zM25,2H26V3H25zM1,3H2V4H1zM3,3H4V4H3zM4,3H5V4H4zM5,3H6V4H5zM7,3H8V4H7zM9,3H10V4H9zM10,3H11V4H10zM11,3H12V4H11zM14,3H15V4H14zM16,3H17V4H16zM17,3H18V4H17zM19,3H20V4H19zM21,3H22V4H21zM22,3H23V4H22zM23,3H24V4H23zM25,3H26V4H25zM1,4H2V5H1zM3,4H4V5H3zM4,4H5V5H4zM5,4H6V5H5zM7,4H8V5H7zM12,4H13V5H12zM14,4H15V5H14zM17,4H18V5H17zM19,4H20V5H19zM21,4H22V5H21zM22,4H23V5H22zM23,4H24V5H23zM25,4H26V5H25zM1,5H2V6H1zM3,5H4V6H3zM4,5H5V6H4zM5,5H6V6H5zM7,5H8V6H7zM9,5H10V6H9zM10,5H11V6H10zM15,5H16V6H15zM17,5H18V6H17zM19,5H20V6H19zM21,5H22V6H21zM22,5H23V6H22zM23,5H24V6H23zM25,5H26V6H25zM1,6H2V7H1zM7,6H8V7H7zM10,6H11V7H10zM12,6H13V7H12zM13,6H14V7H13zM15,6H16V7H15zM17,6H18V7H17zM19,6H20V7H19zM25,6H26V7H25zM1,7H2V8H1zM2,7H3V8H2zM3,7H4V8H3zM4,7H5V8H4zM5,7H6V8H5zM6,7H7V8H6zM7,7H8V8H7zM9,7H10V8H9zM11,7H12V8H11zM13,7H14V8H13zM15,7H16V8H15zM17,7H18V8H17zM19,7H20V8H19zM20,7H21V8H20zM21,7H22V8H21zM22,7H23V8H22zM23,7H24V8H23zM24,7H25V8H24zM25,7H26V8H25zM11,8H12V9H11zM12,8H13V9H12zM13,8H14V9H13zM14,8H15V9H14zM17,8H18V9H17zM1,9H2V10H1zM4,9H5V10H4zM5,9H6V10H5zM6,9H7V10H6zM7,9H8V10H7zM8,9H9V10H8zM9,9H10V10H9zM13,9H14V10H13zM16,9H17V10H16zM18,9H19V10H18zM21,9H22V10H21zM23,9H24V10H23zM24,9H25V10H24zM25,9H26V10H25zM3,10H4V11H3zM10,10H11V11H10zM14,10H15V11H14zM15,10H16V11H15zM16,10H17V11H16zM18,10H19V11H18zM20,10H21V11H20zM21,10H22V11H21zM22,10H23V11H22zM23,10H24V11H23zM24,10H25V11H24zM1,11H2V12H1zM2,11H3V12H2zM3,11H4V12H3zM5,11H6V12H5zM6,11H7V12H6zM7,11H8V12H7zM8,11H9V12H8zM9,11H10V12H9zM10,11H11V12H10zM11,11H12V12H11zM16,11H17V12H16zM19,11H20V12H19zM20,11H21V12H20zM22,11H23V12H22zM25,11H26V12H25zM1,12H2V13H1zM2,12H3V13H2zM4,12H5V13H4zM5,12H6V13H5zM8,12H9V13H8zM11,12H12V13H11zM13,12H14V13H13zM15,12H16V13H15zM16,12H17V13H16zM17,12H18V13H17zM20,12H21V13H20zM22,12H23V13H22zM23,12H24V13H23zM24,12H25V13H24zM25,12H26V13H25zM1,13H2V14H1zM2,13H3V14H2zM7,13H8V14H7zM8,13H9V14H8zM9,13H10V14H9zM13,13H14V14H13zM16,13H17V14H16zM19,13H20V14H19zM25,13H26V14H25zM1,14H2V15H1zM2,14H3V15H2zM3,14H4V15H3zM6,14H7V15H6zM9,14H10V15H9zM10,14H11V15H10zM13,14H14V15H13zM14,14H15V15H14zM16,14H17V15H16zM17,14H18V15H17zM18,14H19V15H18zM21,14H22V15H21zM24,14H25V15H24zM1,15H2V16H1zM2,15H3V16H2zM7,15H8V16H7zM10,15H11V16H10zM13,15H14V16H13zM16,15H17V16H16zM18,15H19V16H18zM19,15H20V16H19zM21,15H22V16H21zM22,15H23V16H22zM23,15H24V16H23zM24,15H25V16H24zM25,15H26V16H25zM1,16H2V17H1zM3,16H4V17H3zM4,16H5V17H4zM10,16H11V17H10zM11,16H12V17H11zM16,16H17V17H16zM18,16H19V17H18zM20,16H21V17H20zM22,16H23V17H22zM23,16H24V17H23zM25,16H26V17H25zM1,17H2V18H1zM3,17H4V18H3zM4,17H5V18H4zM5,17H6V18H5zM6,17H7V18H6zM7,17H8V18H7zM8,17H9V18H8zM9,17H10V18H9zM10,17H11V18H10zM11,17H12V18H11zM12,17H13V18H12zM14,17H15V18H14zM17,17H18V18H17zM18,17H19V18H18zM19,17H20V18H19zM20,17H21V18H20zM21,17H22V18H21zM23,17H24V18H23zM24,17H25V18H24zM9,18H10V19H9zM14,18H15V19H14zM17,18H18V19H17zM21,18H22V19H21zM23,18H24V19H23zM24,18H25V19H24zM1,19H2V20H1zM2,19H3V20H2zM3,19H4V20H3zM4,19H5V20H4zM5,19H6V20H5zM6,19H7V20H6zM7,19H8V20H7zM9,19H10V20H9zM10,19H11V20H10zM11,19H12V20H11zM12,19H13V20H12zM14,19H15V20H14zM17,19H18V20H17zM19,19H20V20H19zM21,19H22V20H21zM25,19H26V20H25zM1,20H2V21H1zM7,20H8V21H7zM9,20H10V21H9zM10,20H11V21H10zM11,20H12V21H11zM13,20H14V21H13zM14,20H15V21H14zM15,20H16V21H15zM16,20H17V21H16zM17,20H18V21H17zM21,20H22V21H21zM1,21H2V22H1zM3,21H4V22H3zM4,21H5V22H4zM5,21H6V22H5zM7,21H8V22H7zM9,21H10V22H9zM10,21H11V22H10zM12,21H13V22H12zM13,21H14V22H13zM15,21H16V22H15zM16,21H17V22H16zM17,21H18V22H17zM18,21H19V22H18zM19,21H20V22H19zM20,21H21V22H20zM21,21H22V22H21zM1,22H2V23H1zM3,22H4V23H3zM4,22H5V23H4zM5,22H6V23H5zM7,22H8V23H7zM9,22H10V23H9zM10,22H11V23H10zM11,22H12V23H11zM12,22H13V23H12zM15,22H16V23H15zM17,22H18V23H17zM19,22H20V23H19zM24,22H25V23H24zM25,22H26V23H25zM1,23H2V24H1zM3,23H4V24H3zM4,23H5V24H4zM5,23H6V24H5zM7,23H8V24H7zM10,23H11V24H10zM12,23H13V24H12zM13,23H14V24H13zM15,23H16V24H15zM16,23H17V24H16zM18,23H19V24H18zM21,23H22V24H21zM22,23H23V24H22zM23,23H24V24H23zM24,23H25V24H24zM25,23H26V24H25zM1,24H2V25H1zM7,24H8V25H7zM15,24H16V25H15zM16,24H17V25H16zM20,24H21V25H20zM21,24H22V25H21zM23,24H24V25H23zM24,24H25V25H24zM25,24H26V25H25zM1,25H2V26H1zM2,25H3V26H2zM3,25H4V26H3zM4,25H5V26H4zM5,25H6V26H5zM6,25H7V26H6zM7,25H8V26H7zM9,25H10V26H9zM10,25H11V26H10zM11,25H12V26H11zM13,25H14V26H13zM15,25H16V26H15zM17,25H18V26H17zM18,25H19V26H18zM22,25H23V26H22zM25,25H26V26H25z" id="qr-path" fill="#000000" fill-opacity="1" fill-rule="nonzero" stroke="none" /></svg></div>
+      <div><b>Inquadra e apri il portale</b><span>Con la fotocamera del telefono, oppure scrivi<br><b style="display:inline;font-size:9.5pt">www.portale-sla.it</b></span></div>
+    </div>
+    <div class="piede"><span>SLA · CISAL — Sindacato Lavoratori Autostradali</span><span>4</span></div>
+  </section>
+
+  <section class="pagina copertina">
+    <div class="alto">
+      <div class="marchio"><div class="logo">SLA</div><div><small>CISAL</small><strong>Sindacato Lavoratori Autostradali</strong></div></div>
+      <h1>Il Portale<br><em>SLA</em></h1>
+      <p class="claim">Rimborsi, documenti e comunicazioni.<br>Tutto in ordine, in un unico posto.</p>
+    </div>
+    <svg class="strada" viewBox="0 0 560 80" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 62 C140 62 200 18 330 18 S500 40 560 30" stroke="rgba(255,255,255,.18)" stroke-width="22" fill="none"/>
+      <path d="M0 62 C140 62 200 18 330 18 S500 40 560 30" stroke="#E8A33D" stroke-width="2.2" stroke-dasharray="14 12" fill="none"/>
+    </svg>
+    <div class="intro">
+      <div class="etichetta">Perché un portale</div>
+      <p>Il portale nasce per <b>mettere ordine</b>: ogni rimborso, ogni documento e ogni pagamento viene registrato in modo chiaro, completo e verificabile.</p>
+      <p style="margin-top:2.5mm">Per le <b>concessionarie</b> significa tenere davvero sotto controllo i costi. Per il <b>Nazionale</b> significa avere finalmente una visione d'insieme, concreta e sempre aggiornata.</p>
+      <div class="sito">www.portale-sla.it <span>Da computer, tablet e smartphone</span></div>
+    </div>
+  </section>
+</div>
+
+<!-- FOGLIO 2 (interno): pagina 2 | pagina 3 -->
+<div class="foglio">
+  <section class="pagina">
+    <div class="etichetta">A cosa serve</div>
+    <h2>Meno carta, più chiarezza</h2>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-check" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path><path d="m9 13 2 2 4-4"></path></svg></div><div><b>Tutto in ordine</b><span>Rimborsi, ricevute, modulistica e comunicazioni in un solo posto, sempre consultabili.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down" aria-hidden="true"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg></div><div><b>Costi sotto controllo</b><span>Chilometri calcolati in automatico, importi chiari e ogni spesa documentata.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-building2 lucide-building-2" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg></div><div><b>Ogni concessionaria la sua area</b><span>Ogni sede gestisce i propri iscritti, rimborsi e documenti.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg></div><div><b>Visione nazionale</b><span>Il Nazionale vede l'insieme delle concessionarie e comunica con tutti in un attimo.</span></div></div>
+    <div class="sep" style="margin:2mm 0 5mm"></div>
+    <div class="etichetta">Come registrarsi</div>
+    <h2 style="font-size:14pt;margin-bottom:4mm">Cinque passi, pochi minuti</h2>
+    <div class="passi">
+      <div class="passo"><div class="num">1</div><p>Vai su <b>www.portale-sla.it</b> e premi <b>Registrati</b>.</p></div>
+      <div class="passo"><div class="num">2</div><p>Inserisci i tuoi dati, scegli la <b>tua concessionaria</b> e il ruolo: <b>Iscritto</b> o <b>Delegato</b>.</p></div>
+      <div class="passo"><div class="num">3</div><p>Accetta l'informativa privacy e spunta <b>"Non sono un robot"</b>.</p></div>
+      <div class="passo"><div class="num">4</div><p>Attendi l'<b>approvazione</b> della segreteria della tua concessionaria.</p></div>
+      <div class="passo"><div class="num">5</div><p>Accedi con <b>email e password</b>. Fatto!</p></div>
+    </div>
+    <div class="box blu"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-key-round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg><div>Scegli una password che conosci solo tu: <b>almeno 8 caratteri</b>, con lettere, numeri e un simbolo (es. ! ? #).</div></div>
+    <div class="piede"><span>Il Portale SLA</span><span>2</span></div>
+  </section>
+
+  <section class="pagina">
+    <div class="etichetta">Per i delegati</div>
+    <h2>Rimborsi chilometrici, senza fogli</h2>
+    <div class="passi">
+      <div class="passo"><div class="num">1</div><p><b>Partenza e destinazione.</b> I chilometri li calcola il portale con Google Maps, andata e ritorno.</p></div>
+      <div class="passo"><div class="num">2</div><p><b>Pedaggi e pasti</b>, se previsti dalla tua sede: basta una <b>foto delle ricevute</b> dal telefono.</p></div>
+      <div class="passo"><div class="num">3</div><p><b>Controlla l'importo e invia.</b> Il calcolo è automatico, con la tariffa della tua concessionaria.</p></div>
+      <div class="passo"><div class="num">4</div><p><b>Segui la richiesta</b> fino al pagamento: ricevi una notifica a ogni passaggio.</p></div>
+    </div>
+    <div class="stati">
+      <div class="stato s-attesa">In attesa</div><div class="stato s-appr">Approvato</div><div class="stato s-pag">Pagato</div><div class="stato s-rif">Rifiutato</div>
+    </div>
+    <div class="sep" style="margin:1mm 0 5mm"></div>
+    <div class="etichetta">Per tutti</div>
+    <h2 style="font-size:14pt;margin-bottom:4mm">Documenti e storico pagamenti</h2>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-text" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg></div><div><b>Modulistica sempre aggiornata</b><span>I documenti del sindacato, pronti da scaricare quando servono.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-megaphone" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg></div><div><b>Bacheca</b><span>Le comunicazioni della tua concessionaria e del Nazionale, con gli allegati.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-history" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg></div><div><b>Storico dei rimborsi</b><span>Tutte le richieste con date, importi e la ricevuta del bonifico, filtrabili per periodo.</span></div></div>
+    <div class="voce"><div class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bell" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg></div><div><b>Notifiche</b><span>Un avviso quando arriva un nuovo comunicato, un documento o un pagamento.</span></div></div>
+    <div class="piede"><span>Il Portale SLA</span><span>3</span></div>
+  </section>
+</div>
+
+</body>
+</html>
