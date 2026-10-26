@@ -56,7 +56,7 @@ export function ResetPasswordPage() {
   const [pwd, setPwd] = useState('');
   const [pwd2, setPwd2] = useState('');
   const [esito, setEsito] = useState('');
-  const [errore, setErrore] = useState('');
+  const [errore, setErrore] = useState(params.get('token') ? '' : 'Link non valido o scaduto. Richiedine uno nuovo.');
   const [busy, setBusy] = useState(false);
 
   const salva = async (e) => {

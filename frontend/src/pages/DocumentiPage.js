@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { FileText, FolderPlus, Download, Trash2, Upload, FolderOpen, Landmark, ArrowLeft } from 'lucide-react';
+import { FileText, FolderPlus, Download, Trash2, Upload, FolderOpen, Globe, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, hasAnyRole } from '../lib/utils';
 import { CartellaCard } from '../components/documenti/CartellaCard';
@@ -21,7 +21,7 @@ const DocumentoCard = ({ doc, canDelete, onDownload, onDelete }) => (
           <h3 className="font-medium text-gray-900 truncate">{doc.nome}</h3>
           {doc.broadcast_nazionale && (
             <span className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-800 text-[10px] font-medium px-1.5 py-0.5 rounded" data-testid={`badge-naz-doc-${doc.id}`}>
-              <Landmark size={10} /> Naz.
+              <Globe size={10} /> Tutte le sedi
             </span>
           )}
         </div>

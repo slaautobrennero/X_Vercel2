@@ -25,7 +25,7 @@ router = APIRouter()
 async def get_sedi(request: Request):  # noqa: ARG001
     # Accesso non autenticato consentito (serve in registrazione)
     sedi = []
-    async for sede in db.sedi.find({}, {"_id": 1, "nome": 1, "codice": 1, "indirizzo": 1, "tariffa_km": 1, "rimborso_pasti": 1, "rimborso_autostrada": 1, "is_nazionale": 1}):
+    async for sede in db.sedi.find({}, {"_id": 1, "nome": 1, "codice": 1, "indirizzo": 1, "tariffa_km": 1, "rimborso_pasti": 1, "rimborso_autostrada": 1, "is_nazionale": 1, "email_contatto": 1}):
         sede["id"] = str(sede["_id"])
         sede.pop("_id")
         sede["is_nazionale"] = bool(sede.get("is_nazionale", False))

@@ -1,0 +1,40 @@
+{
+  "summary": "v0.14.4 tests: document folders (cartelle), forgot/reset password, sede email-contatto, background transactional emails. Backend: 14 pytest tests. At first 13/14 passed: GET /api/sedi did not return email_contatto, so after a reload the Profilo card always showed an empty field. I fixed this (one line added to the projection) and then 14/14 passed. Migration checked by hand: a document with categoria 'modulistica' and one with 'circolari' got a cartella_id after the backend restart. Frontend: forgot-password and reset-password pages, the full Documenti folder flow (create, open, upload, back, reserve, unreserve, delete doc, delete folder) and the Profilo 'Email della concessionaria' card (admin without select, superadmin with select, value kept after reload) all pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/sedi", "issue": "email_contatto was missing from the Mongo projection, so the SedeEmailContatto card always showed empty after a reload. FIXED by tester in routes/sedi.py. Note: the endpoint needs no login, so email_contatto is now public. That is acceptable for a contact address."},
+      {"endpoint": "core/email.py send_email", "issue": "The upstream service returned 429 rate_limited after about 9 emails in a burst during the test run. Those emails are logged and dropped, with no retry or queue. Bursts happen when several registrations or refunds are handled together, or when a new registration notifies all approvers (admin, segretario, superadmin)."},
+      {"endpoint": "core/email.py invia_email", "issue": "asyncio.create_task(...) is not stored anywhere. Python only keeps a weak reference to tasks, so one can be garbage-collected before it finishes. Keep the tasks in a module-level set and remove them with add_done_callback(set.discard)."},
+      {"endpoint": "email delivery (preview)", "issue": "The review note says @test.it recipients get 422 undeliverable. In this run most sends to test_*@test.it addresses got 202 Accepted, so real sends were attempted to fake domains. One earlier send did get 422. Consider an allowlist or dry-run flag outside production, for example EMAIL_DRY_RUN or allowing only delivered@resend.dev in preview."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ResetPasswordPage", "issue": "/reset-password with no token shows the full form. The 'link non valido' error appears only after submit. It would be better to show the error straight away when there is no token.", "selector": "[data-testid='reset-password-input']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Documenti - inside folder", "issues": ["A document in a 'Tutte le sedi' folder shows the badge 'Naz.' (badge-naz-doc-*), while the folder card says 'Tutte le sedi'. The labels are inconsistent."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_v0144_cartelle_email.py", "/app/test_reports/pytest/pytest_v0144.xml"],
+  "action_items": [
+    "Review the tester's fix in routes/sedi.py (email_contatto added to the GET /sedi projection)",
+    "Keep references to background email tasks (store them in a set) so they are not garbage-collected",
+    "Handle 429 rate_limited from the email API: retry with backoff or a simple queue",
+    "Optional: a preview/dev guard so real emails go only to delivered@resend.dev",
+    "Optional: on /reset-password with no token, show the error straight away; use the same label for 'Naz.' and 'Tutte le sedi'"
+  ],
+  "critical_code_review_comments": [
+    "cartelle_nascoste_per scans every folder on each GET /documenti call, and lista_cartelle runs one count_documents per folder. Fine at the current scale; use an aggregate if the number of folders grows.",
+    "The migration is idempotent: it only touches documents where cartella_id does not exist. Checked.",
+    "Invalid ObjectIds are handled globally and return 400 'Identificativo non valido'. Checked."
+  ],
+  "updated_files": ["/app/backend/routes/sedi.py", "/app/backend/tests/test_v0144_cartelle_email.py"],
+  "success_rate": {"backend": "100% (14/14 after the 1 fix; 93% before)", "frontend": "100%"},
+  "seed_data_creation": "None left. The test sedi, users, cartelle, documenti, rimborsi and password_resets were all cleaned up. The UI admin user, the TEST_UI_Cartella folder and the migration test docs plus the 'Circolari' folder were removed. A22 email_contatto was put back to null. The 'Modulistica' folder (sede_id null) already existed and was kept. One password_resets record for pending1@test.it already existed and was not touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_v0144_cartelle_email.py creates its own sedi and users in mongo (bcrypt Prova123!) and cleans up by TAG. Reset-password test: insert password_resets with token_hash=sha256('testtoken123'). Forgot-password has a 5/hour limit per IP; the tests send a random X-Forwarded-For. The email API can hit its 429 rate limit when tests run back to back. Use delivered@resend.dev for real delivery checks."
+}

@@ -17,6 +17,8 @@ from .db import db
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
 EMAIL_FROM_NAME = os.environ["EMAIL_FROM_NAME"]
+_LIMITE = asyncio.Semaphore(2)
+_TASKS: set = set()
 
 # ---------- Guardrail gate (G2/G3) ----------
 _SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
@@ -100,8 +102,13 @@ async def send_email(*, to: str, subject: str, html: str, reply_to: Optional[str
     payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
     if reply_to:
         payload["contact_email"] = reply_to
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+    async with _LIMITE:
+        for tentativo in range(4):
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+            if resp.status_code != 429:
+                break
+            await asyncio.sleep(2 ** tentativo)
     if resp.status_code >= 400:
         try:
             body = resp.json()
@@ -219,4 +226,6 @@ async def _invia(user: dict, tpl: tuple) -> None:
 def invia_email(user: dict, tpl: tuple) -> None:
     """Non blocca la richiesta: l'email parte in background."""
     if user and user.get("email"):
-        asyncio.create_task(_invia(user, tpl))
+        task = asyncio.create_task(_invia(user, tpl))
+        _TASKS.add(task)
+        task.add_done_callback(_TASKS.discard)
