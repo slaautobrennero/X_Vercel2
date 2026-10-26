@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { toast } from 'sonner';
 import { BellRing, BellOff } from 'lucide-react';
 import { attivaPush, disattivaPush, iscrizioneAttuale, isIOS, isStandalone, pushSupportato } from '../lib/push';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export const NotifichePushCard = () => {
   const [attive, setAttive] = useState(false);
@@ -9,7 +12,10 @@ export const NotifichePushCard = () => {
   const supportato = pushSupportato();
 
   useEffect(() => {
-    iscrizioneAttuale().then((s) => setAttive(!!s)).catch(() => {});
+    iscrizioneAttuale().then((s) => {
+      setAttive(!!s);
+      if (s) axios.post(`${API}/push/subscribe`, s.toJSON()).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   const cambia = async () => {

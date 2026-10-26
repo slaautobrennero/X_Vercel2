@@ -48,10 +48,14 @@ def _send_one(sub: dict, payload: str, private_key: str) -> int:
             vapid_private_key=private_key,
             vapid_claims={"sub": f"mailto:noreply@{(FRONTEND_URL.split('//')[-1].split('/')[0] or 'localhost')}"},
             ttl=86400,
+            timeout=10,
         )
         return 201
     except WebPushException as e:
         return e.response.status_code if e.response is not None else 0
+    except Exception as e:
+        logger.warning(f"Push non inviata: {e}")
+        return 0
 
 
 async def _push_users(user_ids: list, titolo: str, messaggio: str, url: str) -> None:

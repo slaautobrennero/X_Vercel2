@@ -1,0 +1,37 @@
+{
+  "summary": "Tested v0.14.5: free Web Push (VAPID) and per-sede email configuration (none/smtp/emergent). Backend: 13/13 pytest tests pass. They cover a stable VAPID key that is saved in db.impostazioni; subscribe needs login, rejects non-https endpoints with 422, and upserts by endpoint; unsubscribe only removes the caller's own subscription; push runs in the background when a registration is approved (the request answers in under 5s, there is no traceback, and the fake FCM subscription was deleted after the 404/410 response); email-config permissions (admin of the same sede or superadmin get 200; admin of another sede, segretario and iscritto get 403; smtp_password_enc is never returned); PUT validation (400 without host/port/user, 400 without a password the first time, 422 for an invalid mode); the password is stored Fernet-encrypted (gAAAA) and kept when a later PUT has no password; the test email returns 400 in 'nessuna' mode, 400 'Invio non riuscito: [Errno -2] Name or service not known' for a nonexistent SMTP host, and 200 in emergent mode to delivered+tag@resend.dev; in 'nessuna' mode, approving a registration makes no call to integrations.emergentagent.com (checked in the httpx logs); the forgot-password message mentions the segreteria; GET /api/sedi does not expose email_config. Frontend: the iscritto Profilo shows the notifiche-push-card with push-toggle-btn (headless permission denied shows a readable toast) and no email card. The admin Profilo shows the 3 radios; smtp shows all 6 fields; the Gmail preset fills smtp.gmail.com:587; Salva without a password shows an error toast, and with a password 'Impostazioni email salvate'; Invia email di prova shows a readable error; after reload the config and the 'lascia vuoto' label persist. Superadmin sees the sede select. The service worker is registered and the console has no errors besides the expected 400s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sedi/{id}/email-config/test (emergent mode)", "issue": "send_email() returns None on 4xx errors and when the key is missing, without raising. The test endpoint therefore always answers 200 'Email di prova inviata' even when the send failed (insufficient_credits, daily_limit, 4xx). It should raise when send_email returns None in invia_con_config."},
+      {"endpoint": "core/push.py _push_users", "issue": "_send_one only catches WebPushException. Any other error (bad subscription keys, network or requests error) escapes, the outer try catches it, and the loop stops: the remaining subscriptions get no push. Catch Exception per subscription. webpush() also has no timeout (pass timeout=10)."},
+      {"endpoint": "PUT /api/sedi/{id}/email-config", "issue": "Saving mode 'nessuna' (or 'emergent') replaces email_config with {modalita} only. The SMTP host, user and encrypted password are lost, so turning email off for a while and back on forces the admin to retype everything. Consider keeping the smtp_* fields."},
+      {"endpoint": "POST /api/push/subscribe", "issue": "The upsert by endpoint reassigns user_id to whoever is logged in. This is acceptable on a shared device, but be aware of it (another user can take over an endpoint they know)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Profilo - Notifiche sul telefono", "issues": ["If the server deleted the subscription (410), the browser still has it and the button shows 'Disattiva'. Optionally re-sync on load by posting the subscribe again."]},
+      {"screen": "service-worker.js", "issues": ["The empty fetch listener makes Chrome log a 'no-op fetch handler' warning and adds overhead. Remove it unless it is needed for the PWA install criteria."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_v0145_push_email_sede.py", "/app/backend/tests/seed_ui_v0145.py", "/app/test_reports/pytest/pytest_v0145.xml"],
+  "action_items": [
+    "Make invia_con_config raise when send_email returns None (emergent mode), so the test email reports failures correctly",
+    "In _send_one, catch generic Exception per subscription and pass timeout to webpush",
+    "Optional: keep the SMTP settings when switching mode to 'nessuna'"
+  ],
+  "critical_code_review_comments": [
+    "Fernet key derived from JWT_SECRET: rotating JWT_SECRET makes every saved SMTP password unreadable, and decifra will throw InvalidToken. That error is logged, but the admin is not told. Document this or catch it and ask for the password again.",
+    "SMTP from an arbitrary admin-supplied host/port is a mild SSRF vector (internal port scanning through the test endpoint's error messages). Only admins can do it; consider blocking private IPs.",
+    "The VAPID keys are cached in memory and stored in the DB. Checked: the key is stable across hot reloads."
+  ],
+  "updated_files": ["/app/backend/tests/test_v0145_push_email_sede.py", "/app/backend/tests/seed_ui_v0145.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100%"},
+  "seed_data_creation": "None left. The test sedi, users, push subscriptions and audit entries were cleaned up. The only sede (A22) has email_config.modalita='nessuna', and push_subscriptions has 0 documents.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_v0145_push_email_sede.py builds its sedi and users in mongo and cleans up by TAG. It reads /var/log/supervisor/backend.err.log to check for emergent calls (httpx logs at INFO there). Writing files under backend/tests triggers a backend hot reload. The emergent test uses delivered+TAG@resend.dev. seed_ui_v0145.py seed|clean creates test_ui145_adm@test.it / test_ui145_del@test.it (Prova123!)."
+}

@@ -199,7 +199,7 @@ async def get_email_config(sede_id: str, request: Request):
 async def update_email_config(sede_id: str, payload: EmailConfigUpdate, request: Request):
     user, sede = await _sede_gestibile(sede_id, request)
     vecchia = sede.get("email_config") or {}
-    cfg = {"modalita": payload.modalita}
+    cfg = {**vecchia, "modalita": payload.modalita}
     if payload.modalita == "smtp":
         if not payload.smtp_host or not payload.smtp_port or not payload.smtp_user:
             raise HTTPException(status_code=400, detail="Per la casella email servono server, porta e utente")

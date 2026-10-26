@@ -1,4 +1,3 @@
-/* global clients */
 // Service Worker Portale SLA: notifiche push. Nessuna cache dei dati (privacy).
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -7,8 +6,6 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))).then(() => self.clients.claim())
   );
 });
-
-self.addEventListener('fetch', () => {});
 
 self.addEventListener('push', (event) => {
   let data = { title: 'Portale SLA', body: 'Hai una nuova notifica', url: '/notifiche' };
@@ -32,11 +29,11 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || '/';
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const c of list) {
         if ('focus' in c) { c.navigate(url); return c.focus(); }
       }
-      return clients.openWindow(url);
+      return self.clients.openWindow(url);
     })
   );
 });

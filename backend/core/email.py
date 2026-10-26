@@ -261,7 +261,8 @@ async def invia_con_config(cfg: dict, to: str, tpl: tuple, reply_to: Optional[st
     if modalita == "smtp":
         await asyncio.wait_for(asyncio.to_thread(_smtp_send, cfg, to, subject, html, reply_to), timeout=40)
     elif modalita == "emergent":
-        await send_email(to=to, subject=subject, html=html, reply_to=reply_to)
+        if not await send_email(to=to, subject=subject, html=html, reply_to=reply_to):
+            raise RuntimeError("il servizio email ha rifiutato l'invio (crediti, limite giornaliero o chiave mancante)")
 
 
 async def _invia(user: dict, tpl: tuple) -> None:
