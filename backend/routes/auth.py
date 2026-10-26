@@ -2,11 +2,15 @@
 routes/auth.py
 Autenticazione: register, login, logout, me, refresh, change password, 2FA TOTP.
 """
+import hashlib
+import re
+import secrets
 from datetime import datetime, timezone, timedelta
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request, Response
 import jwt
+from pydantic import BaseModel, EmailStr
 
 from core.audit import _log_audit
 from core.auth import (
@@ -17,6 +21,7 @@ from core.captcha import verify_hcaptcha
 from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.db import db
 from core.notifications import _notify_users_by_role
+from core import email as mail
 from core.rate_limit import get_client_ip, limiter
 from core.roles import user_has_any_role
 from models_api import (
@@ -115,6 +120,12 @@ async def register(user_data: UserCreate, request: Request, response: Response):
         await _notify_users_by_role(["segretario", "admin"], user_data.sede_id, notifica)
     await _notify_users_by_role(["superadmin"], None, notifica)
 
+    approvatori = {"$or": [{"ruoli": "superadmin"}]}
+    if user_data.sede_id:
+        approvatori["$or"].append({"sede_id": user_data.sede_id, "ruoli": {"$in": ["segretario", "admin"]}})
+    async for a in db.users.find({**approvatori, "disabled": {"$ne": True}}, {"email": 1, "nome": 1, "sede_id": 1}):
+        mail.invia_email(a, mail.tpl_nuova_registrazione(a, user_doc, ruolo))
+
     return {
         "message": "Registrazione inviata. Potrai accedere dopo l'approvazione della tua sede.",
         "id": user_id,
@@ -139,11 +150,13 @@ async def login(login_data: LoginRequest, request: Request, response: Response):
 
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(login_data.password, user["password_hash"]):
-        await db.login_attempts.update_one(
+        res = await db.login_attempts.find_one_and_update(
             {"identifier": identifier},
             {"$inc": {"count": 1}, "$set": {"last_attempt": datetime.now(timezone.utc).isoformat()}},
-            upsert=True,
+            upsert=True, return_document=True,
         )
+        if user and res and res.get("count") == 5:
+            mail.invia_email(user, mail.tpl_sicurezza(user, "account_bloccato"))
         raise HTTPException(status_code=401, detail="Credenziali non valide")
 
     if user.get("stato_approvazione") == "in_attesa":
@@ -282,6 +295,7 @@ async def enable_2fa(payload: TOTPEnableRequest, request: Request):
         target_id=user["id"],
         target_label=user["email"],
     )
+    mail.invia_email(user_doc, mail.tpl_sicurezza(user_doc, "2fa_attivata"))
     return {"message": "2FA attivato con successo", "totp_enabled": True}
 
 
@@ -308,6 +322,7 @@ async def disable_2fa(payload: TOTPDisableRequest, request: Request):
         target_id=user["id"],
         target_label=user["email"],
     )
+    mail.invia_email(user_doc, mail.tpl_sicurezza(user_doc, "2fa_disattivata"))
     return {"message": "2FA disattivato", "totp_enabled": False}
 
 
@@ -363,5 +378,69 @@ async def change_password(data: ChangePasswordRequest, request: Request, respons
 
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
+    mail.invia_email(user_doc, mail.tpl_sicurezza(user_doc, "password_cambiata"))
 
     return {"message": "Password aggiornata. Effettua nuovamente il login per sicurezza."}
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@router.post("/auth/forgot-password")
+@limiter.limit("5/hour")
+async def forgot_password(data: ForgotPasswordRequest, request: Request, response: Response):
+    """Invia un link di reset. Risposta sempre identica per non rivelare quali email esistono."""
+    risposta = {"message": "Se l'indirizzo è registrato, riceverai un'email con il link per reimpostare la password."}
+    user = await db.users.find_one({"email": data.email.lower().strip()})
+    if not user or user.get("disabled") or user.get("stato_approvazione") == "in_attesa":
+        return risposta
+    recente = await db.password_resets.find_one({
+        "user_id": str(user["_id"]),
+        "created_at": {"$gt": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()},
+    })
+    if recente:
+        return risposta
+    token = secrets.token_urlsafe(32)
+    await db.password_resets.delete_many({"user_id": str(user["_id"])})
+    await db.password_resets.insert_one({
+        "user_id": str(user["_id"]),
+        "token_hash": _hash_token(token),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+    })
+    mail.invia_email(user, mail.tpl_reset_password(user, token))
+    return risposta
+
+
+@router.post("/auth/reset-password")
+@limiter.limit("10/hour")
+async def reset_password_con_token(data: ResetPasswordRequest, request: Request, response: Response):
+    rec = await db.password_resets.find_one({"token_hash": _hash_token(data.token)})
+    if not rec or rec["expires_at"] < datetime.now(timezone.utc).isoformat():
+        raise HTTPException(status_code=400, detail="Link non valido o scaduto. Richiedine uno nuovo.")
+    validate_password_strength(data.new_password)
+    user = await db.users.find_one({"_id": ObjectId(rec["user_id"])})
+    if not user or user.get("disabled"):
+        raise HTTPException(status_code=400, detail="Link non valido o scaduto. Richiedine uno nuovo.")
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {
+        "password_hash": hash_password(data.new_password),
+        "password_changed_at": datetime.now(timezone.utc).isoformat(),
+        "must_change_password": False,
+    }, "$inc": {"token_version": 1}})
+    await db.password_resets.delete_many({"user_id": rec["user_id"]})
+    await db.login_attempts.delete_many({"identifier": {"$regex": f":{re.escape(user['email'])}$"}})
+    await _log_audit(actor={"id": rec["user_id"], "email": user["email"], "nome": user.get("nome", ""), "cognome": user.get("cognome", "")},
+                     action="user.password_reset_self", target_type="user", target_id=rec["user_id"], target_label=user["email"],
+                     sede_id=user.get("sede_id"))
+    mail.invia_email(user, mail.tpl_sicurezza(user, "password_cambiata"))
+    return {"message": "Password aggiornata. Ora puoi accedere con la nuova password."}

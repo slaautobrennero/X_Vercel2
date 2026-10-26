@@ -105,7 +105,7 @@ const guidaIscritto = {
     },
   ],
   faq: [
-    { d: 'Ho dimenticato la password, cosa faccio?', r: 'Contatta il Segretario o l\'Admin della tua sede: può generarti una password temporanea. Appena entri, cambiala dal Profilo.' },
+    { d: 'Ho dimenticato la password, cosa faccio?', r: 'Nella pagina di accesso premi "Password dimenticata?", scrivi la tua email e segui il link che ricevi (vale 30 minuti). In alternativa il Segretario o l\'Admin della tua sede può darti una password temporanea.' },
     { d: 'Mi sono registrato ma non riesco a entrare.', r: 'Probabilmente la registrazione è ancora in attesa di approvazione. Se passa troppo tempo, contatta la segreteria della tua concessionaria.' },
     { d: 'Il portale dice che l\'accesso è bloccato.', r: 'Hai sbagliato la password troppe volte. Aspetta 15 minuti e riprova con calma.' },
     { d: 'Perché non vedo la voce "Rimborsi"?', r: 'I rimborsi chilometrici sono riservati ai delegati e ai ruoli sindacali. Se sei delegato ma non la vedi, chiedi al responsabile della tua sede di aggiornare il tuo ruolo.' },

@@ -35,6 +35,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # CORS origin regex (configurabile via env)
+FRONTEND_URL = os.environ["FRONTEND_URL"]
+
 FRONTEND_ORIGIN_REGEX = os.environ.get(
     "FRONTEND_ORIGIN_REGEX",
     r"https?://(www\.)?(portale-sla\.it|localhost(:\d+)?|192\.168\.\d+\.\d+(:\d+)?)"

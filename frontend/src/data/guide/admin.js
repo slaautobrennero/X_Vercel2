@@ -45,6 +45,18 @@ const guidaAdmin = {
       nota: { tipo: 'info', testo: 'I ruoli Admin, SuperUser e SuperAdmin li assegna solo il SuperAdmin. Puoi gestire solo gli utenti della tua concessionaria, non altri Admin né i tuoi stessi ruoli.' },
     },
     {
+      id: 'cartelle',
+      titolo: 'Cartelle dei documenti ed email della sede',
+      icona: ScrollText,
+      intro: 'Tu decidi come è organizzata la sezione Documenti della tua concessionaria.',
+      passi: [
+        { t: 'Crea una cartella', d: 'In Documenti premi "Nuova cartella" e dai un nome (es. Modulistica, Contratti).', btn: 'Nuova cartella' },
+        { t: 'Visibile o riservata', d: 'Con "Rendi riservata" la cartella e i documenti dentro li vedono solo gli Admin; con "Rendi visibile" tornano visibili a tutti.', btn: 'Rendi riservata' },
+        { t: 'Eliminare una cartella', d: 'Si può eliminare solo quando è vuota: prima elimina i documenti al suo interno.' },
+        { t: 'Email della concessionaria', d: 'Nel Profilo, in "Email della concessionaria", indica l\'indirizzo a cui arrivano le risposte alle email del portale.', btn: 'Salva' },
+      ],
+    },
+    {
       id: 'controllo',
       titolo: 'Controllo e trasparenza',
       icona: ScrollText,

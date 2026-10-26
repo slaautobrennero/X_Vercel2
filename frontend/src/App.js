@@ -53,6 +53,7 @@ import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
 import ImpostazioniSindacatoPage from './pages/ImpostazioniSindacatoPage';
 import GuidaPage from './pages/GuidaPage';
+import { PasswordDimenticataPage, ResetPasswordPage } from './pages/PasswordResetPages';
 import { PrivacyPage, CookiePolicyPage, TerminiPage } from './pages/LegalPage';
 
 // Layout - Layout principale con sidebar
@@ -130,6 +131,9 @@ function AppRoutes() {
           <RegisterPage />
         </PublicRoute>
       } />
+
+      <Route path="/password-dimenticata" element={<PublicRoute><PasswordDimenticataPage /></PublicRoute>} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Public Legal Pages (accessibili senza login) */}
       <Route path="/privacy" element={<PrivacyPage />} />

@@ -73,8 +73,12 @@ services:
       # hCaptcha (opzionale, anti-bot su registrazione)
       HCAPTCHA_SECRET: ${HCAPTCHA_SECRET:-}
 
-      # Frontend URL per CORS
+      # Indirizzo pubblico del portale (usato nei link delle email, es. https://www.portale-sla.it)
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+
+      # Email transazionali (Emergent Managed Email)
+      EMERGENT_EMAIL_KEY: ${EMERGENT_EMAIL_KEY:-}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-SLA - CISAL}
     volumes:
       - uploads_data:/app/uploads
     # Solo dal Raspberry stesso (Cloudflare Tunnel): non raggiungibile dalla rete di casa

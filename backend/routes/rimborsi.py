@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from core.audit import _log_audit
 from core.auth import get_current_user
 from core.db import db
+from core import email as mail
 from core.storage import delete_upload, detect_ext, get_local_path, require_ext, save_upload
 from core.notifications import _notify_user, _notify_users_by_role
 from core.roles import user_has_role, is_sede_nazionale_member, user_has_any_role
@@ -412,6 +413,9 @@ async def update_rimborso(rimborso_id: str, rimborso_data: RimborsoUpdate, reque
     await db.rimborsi.update_one({"_id": ObjectId(rimborso_id)}, {"$set": update_data})
 
     stato_msg = {"approvato": "approvata", "rifiutato": "rifiutata"}
+    if rimborso_data.stato in stato_msg and rimborso_data.stato != rimborso.get("stato"):
+        richiedente = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])}, {"email": 1, "nome": 1, "sede_id": 1})
+        mail.invia_email(richiedente, mail.tpl_rimborso_stato(richiedente or {}, rimborso, rimborso_data.stato))
     if rimborso_data.stato and rimborso_data.stato in stato_msg:
         await _notify_user(
             user_id=rimborso["user_id"],
@@ -489,6 +493,8 @@ async def upload_contabile(rimborso_id: str, request: Request, file: UploadFile 
         msg_user = f"Il tuo rimborso del {rimborso['data']} è stato pagato. Contabile disponibile."
         titolo_user = "Rimborso pagato"
 
+    richiedente = await db.users.find_one({"_id": ObjectId(rimborso["user_id"])}, {"email": 1, "nome": 1, "sede_id": 1})
+    mail.invia_email(richiedente, mail.tpl_rimborso_stato(richiedente or {}, rimborso, "pagato"))
     await _notify_user(
         user_id=rimborso["user_id"],
         notifica_data={

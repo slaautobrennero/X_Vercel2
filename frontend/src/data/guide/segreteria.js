@@ -25,10 +25,10 @@ const guidaSegreteria = {
       id: 'documento',
       titolo: 'Caricare un documento',
       icona: FileUp,
-      intro: 'La modulistica caricata qui è scaricabile da tutti gli iscritti della sede.',
+      intro: 'I documenti sono divisi in cartelle. Le cartelle le crea l\'Admin; tu carichi i documenti dentro.',
       passi: [
-        { t: 'Apri Documenti', d: 'Dal menu scegli Documenti.', btn: 'Carica Documento' },
-        { t: 'Compila i campi', d: 'Nome Documento, Categoria, una breve Descrizione e il File (PDF, JPG, PNG, max 5 MB).' },
+        { t: 'Apri la cartella', d: 'In Documenti clicca sulla cartella giusta (es. Modulistica).', btn: 'Carica Documento' },
+        { t: 'Compila i campi', d: 'Nome Documento, una breve Descrizione e il File (PDF, JPG, PNG, max 5 MB).' },
         { t: 'Conferma il caricamento', d: 'Il documento è subito disponibile e gli iscritti ricevono una notifica.' },
       ],
     },

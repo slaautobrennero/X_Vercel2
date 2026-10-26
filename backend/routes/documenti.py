@@ -15,17 +15,17 @@ from core.db import db
 from core.storage import delete_upload, get_local_path, require_ext, save_upload
 from core.notifications import _notify_all_in_sede
 from core.roles import (
-    get_sede_nazionale_id,
     is_sede_nazionale_member,
     user_has_any_role,
-    user_has_role,
 )
+
+from routes.cartelle import cartelle_nascoste_per, get_cartella, puo_caricare, puo_vedere
 
 router = APIRouter()
 
 
 @router.get("/documenti")
-async def get_documenti(request: Request, categoria: Optional[str] = None):
+async def get_documenti(request: Request, categoria: Optional[str] = None, cartella_id: Optional[str] = None):
     user = await get_current_user(request)
 
     # v0.14.0: admin/segretario del Nazionale vedono TUTTI i documenti (di tutte le sedi)
@@ -40,6 +40,13 @@ async def get_documenti(request: Request, categoria: Optional[str] = None):
 
     if categoria:
         query["categoria"] = categoria
+    nascoste = await cartelle_nascoste_per(user)
+    if cartella_id:
+        if cartella_id in nascoste:
+            raise HTTPException(status_code=403, detail="Cartella riservata")
+        query["cartella_id"] = cartella_id
+    elif nascoste:
+        query["cartella_id"] = {"$nin": nascoste}
 
     documenti = []
     async for doc in db.documenti.find(query).sort("created_at", -1):
@@ -55,14 +62,14 @@ async def upload_documento(
     request: Request,
     file: UploadFile = File(...),
     nome: str = Form(...),
-    categoria: str = Form(...),
+    cartella_id: str = Form(...),
     descrizione: str = Form(None),
-    solo_nazionale: Optional[bool] = Form(False),
 ):
     user = await get_current_user(request)
 
-    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
-        raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    cartella = await get_cartella(cartella_id)
+    if not await puo_caricare(user, cartella):
+        raise HTTPException(status_code=403, detail="Non puoi caricare documenti in questa cartella")
 
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Formato file non supportato")
@@ -76,22 +83,14 @@ async def upload_documento(
     filename = f"doc_{file_id}.{ext}"
     await save_upload(filename, content)
 
-    # v0.14.0: Sede Nazionale — stessa logica degli annunci
-    is_naz = await is_sede_nazionale_member(user, roles=["admin", "segretario", "segreteria"])
-    sede_nazionale_id = await get_sede_nazionale_id()
-    if user_has_role(user, "superadmin"):
-        target_sede_id = None
-        broadcast_nazionale = True
-    elif is_naz:
-        target_sede_id = sede_nazionale_id if solo_nazionale else None
-        broadcast_nazionale = not solo_nazionale
-    else:
-        target_sede_id = user.get("sede_id")
-        broadcast_nazionale = False
+    # Il documento eredita l'ambito della cartella (sede_id None = tutte le concessionarie)
+    target_sede_id = cartella.get("sede_id")
+    broadcast_nazionale = target_sede_id is None
 
     doc_record = {
         "nome": nome,
-        "categoria": categoria,
+        "cartella_id": cartella_id,
+        "categoria": cartella["nome"],
         "descrizione": descrizione,
         "filename": file.filename,
         "path": filename,
@@ -106,17 +105,18 @@ async def upload_documento(
     doc_record["id"] = str(result.inserted_id)
     doc_record.pop("_id", None)
 
-    await _notify_all_in_sede(
-        sede_id=doc_record["sede_id"],
-        notifica_data={
-            "sede_id": doc_record["sede_id"],
-            "tipo": "documento",
-            "titolo": "Nuovo documento disponibile",
-            "messaggio": f"{user['nome']} {user['cognome']} ha caricato: {nome}",
-            "documento_id": doc_record["id"],
-        },
-        exclude_user_id=user["id"],
-    )
+    if cartella.get("visibile", True):
+        await _notify_all_in_sede(
+            sede_id=doc_record["sede_id"],
+            notifica_data={
+                "sede_id": doc_record["sede_id"],
+                "tipo": "documento",
+                "titolo": "Nuovo documento disponibile",
+                "messaggio": f"{user['nome']} {user['cognome']} ha caricato: {nome}",
+                "documento_id": doc_record["id"],
+            },
+            exclude_user_id=user["id"],
+        )
 
     return doc_record
 
@@ -135,6 +135,9 @@ async def download_documento(doc_id: str, request: Request):
         if doc.get("sede_id") and doc["sede_id"] != user.get("sede_id"):
             raise HTTPException(status_code=403, detail="Non autorizzato")
 
+    if doc.get("cartella_id") and not await puo_vedere(user, await get_cartella(doc["cartella_id"])):
+        raise HTTPException(status_code=403, detail="Cartella riservata")
+
     filepath = await get_local_path(doc["path"])
     if not filepath:
         raise HTTPException(status_code=404, detail="File non trovato")
@@ -146,12 +149,12 @@ async def download_documento(doc_id: str, request: Request):
 async def delete_documento(doc_id: str, request: Request):
     user = await get_current_user(request)
 
-    if not user_has_any_role(user, ["segreteria", "segretario", "admin", "superadmin"]):
-        raise HTTPException(status_code=403, detail="Permessi insufficienti")
-
     doc = await db.documenti.find_one({"_id": ObjectId(doc_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Documento non trovato")
+    cartella = await db.cartelle.find_one({"_id": ObjectId(doc["cartella_id"])}) if doc.get("cartella_id") else {"sede_id": doc.get("sede_id")}
+    if not await puo_caricare(user, cartella or {"sede_id": doc.get("sede_id")}):
+        raise HTTPException(status_code=403, detail="Non puoi eliminare questo documento")
 
     await delete_upload(doc["path"])
 

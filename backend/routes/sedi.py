@@ -13,8 +13,10 @@ from core.roles import (
     get_sede_nazionale_id,
     invalidate_sede_nazionale_cache,
     user_has_any_role,
+    user_has_role,
 )
-from models_api import SedeCreate, SedeUpdate
+from core.audit import _log_audit
+from models_api import SedeCreate, SedeEmailContatto, SedeUpdate
 
 router = APIRouter()
 
@@ -136,3 +138,20 @@ async def delete_sede(sede_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Sede non trovata")
 
     return {"message": "Sede eliminata"}
+
+
+@router.put("/sedi/{sede_id}/email-contatto")
+async def update_email_contatto(sede_id: str, payload: SedeEmailContatto, request: Request):
+    """Email a cui arrivano le risposte alle email del portale (Admin della sede o SuperAdmin)."""
+    user = await get_current_user(request)
+    if not (user_has_role(user, "superadmin") or (user_has_role(user, "admin") and user.get("sede_id") == sede_id)):
+        raise HTTPException(status_code=403, detail="Solo l'Admin della concessionaria o il SuperAdmin")
+    sede = await db.sedi.find_one({"_id": ObjectId(sede_id)})
+    if not sede:
+        raise HTTPException(status_code=404, detail="Sede non trovata")
+    nuova = str(payload.email_contatto) if payload.email_contatto else None
+    await db.sedi.update_one({"_id": sede["_id"]}, {"$set": {"email_contatto": nuova}})
+    await _log_audit(actor=user, action="sede.email_contatto", target_type="sede", target_id=sede_id,
+                     target_label=sede.get("nome", ""), sede_id=sede_id,
+                     old_value=sede.get("email_contatto"), new_value=nuova)
+    return {"message": "Email della concessionaria aggiornata", "email_contatto": nuova}

@@ -96,6 +96,10 @@ class SedeCreate(BaseModel):
     rimborso_autostrada: bool = True
 
 
+class SedeEmailContatto(BaseModel):
+    email_contatto: Optional[EmailStr] = None
+
+
 class SedeUpdate(BaseModel):
     nome: Optional[str] = None
     indirizzo: Optional[str] = None

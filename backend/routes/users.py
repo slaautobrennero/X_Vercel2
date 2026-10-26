@@ -13,6 +13,7 @@ from core.auth import (
 )
 from core.db import db
 from core.notifications import _notify_user
+from core import email as mail
 from core.rate_limit import limiter
 from core.roles import normalize_roles_input, user_has_any_role, user_has_role
 from models_api import ToggleDisableRequest, UpdateRuoliRequest, UserUpdate
@@ -42,6 +43,7 @@ async def admin_reset_password(user_id: str, request: Request, response: Respons
             "must_change_password": True,
         }, "$inc": {"token_version": 1}},
     )
+    mail.invia_email(target_user, mail.tpl_sicurezza(target_user, "password_reimpostata_admin"))
 
     await db.notifiche.insert_one({
         "user_id": user_id,
@@ -178,6 +180,7 @@ async def approva_registrazione(user_id: str, request: Request):
         "titolo": "Benvenuto nel portale SLA",
         "messaggio": f"La tua registrazione è stata approvata da {current_user['nome']} {current_user['cognome']}.",
     })
+    mail.invia_email(target, mail.tpl_registrazione_approvata(target))
     await _log_audit(actor=current_user, action="user.registration_approved", target_type="user",
                      target_id=user_id, target_label=_label(target), sede_id=target.get("sede_id"),
                      old_value="in_attesa", new_value="approvato")
@@ -190,6 +193,7 @@ async def rifiuta_registrazione(user_id: str, request: Request):
     await db.consensi_privacy.delete_many({"user_id": target["_id"]})
     await db.notifiche.delete_many({"user_id": user_id})
     await db.users.delete_one({"_id": target["_id"]})
+    mail.invia_email(target, mail.tpl_registrazione_rifiutata(target))
     await _log_audit(actor=current_user, action="user.registration_rejected", target_type="user",
                      target_id=user_id, target_label=_label(target), sede_id=target.get("sede_id"),
                      old_value="in_attesa", note="Registrazione rifiutata: account e consensi eliminati")
