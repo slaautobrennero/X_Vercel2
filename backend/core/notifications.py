@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from bson import ObjectId
 from .db import db
+from .push import invia_push
 
 
 async def _notify_users_by_role(roles: list, sede_id: Optional[str], notifica_data: dict, include_global: bool = False):
@@ -33,6 +34,7 @@ async def _notify_users_by_role(roles: list, sede_id: Optional[str], notifica_da
         })
     if notifiche_to_insert:
         await db.notifiche.insert_many(notifiche_to_insert)
+        invia_push([n["user_id"] for n in notifiche_to_insert], notifica_data)
 
 
 async def _notify_user(user_id: str, notifica_data: dict):
@@ -43,6 +45,7 @@ async def _notify_user(user_id: str, notifica_data: dict):
         "letto": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
+    invia_push([user_id], notifica_data)
 
 
 async def _notify_all_in_sede(sede_id: Optional[str], notifica_data: dict, exclude_user_id: Optional[str] = None):
@@ -73,3 +76,4 @@ async def _notify_all_in_sede(sede_id: Optional[str], notifica_data: dict, exclu
         })
     if notifiche_to_insert:
         await db.notifiche.insert_many(notifiche_to_insert)
+        invia_push([n["user_id"] for n in notifiche_to_insert], notifica_data)

@@ -400,7 +400,7 @@ def _hash_token(token: str) -> str:
 @limiter.limit("5/hour")
 async def forgot_password(data: ForgotPasswordRequest, request: Request, response: Response):
     """Invia un link di reset. Risposta sempre identica per non rivelare quali email esistono."""
-    risposta = {"message": "Se l'indirizzo è registrato, riceverai un'email con il link per reimpostare la password."}
+    risposta = {"message": "Se l'indirizzo è registrato e la tua concessionaria ha attivato le email, riceverai un link per reimpostare la password. Altrimenti rivolgiti alla segreteria della tua concessionaria."}
     user = await db.users.find_one({"email": data.email.lower().strip()})
     if not user or user.get("disabled") or user.get("stato_approvazione") == "in_attesa":
         return risposta

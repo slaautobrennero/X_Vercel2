@@ -1,5 +1,11 @@
 """Email transazionali tramite Emergent Managed Email (Resend)."""
 import asyncio
+import base64
+import hashlib
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.utils import formataddr
 import ipaddress
 import os
 import re
@@ -10,8 +16,9 @@ from urllib.parse import urlparse
 
 import httpx
 from bson import ObjectId
+from cryptography.fernet import Fernet
 
-from .config import FRONTEND_URL, logger
+from .config import FRONTEND_URL, JWT_SECRET, logger
 from .db import db
 
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
@@ -102,13 +109,12 @@ async def send_email(*, to: str, subject: str, html: str, reply_to: Optional[str
     payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
     if reply_to:
         payload["contact_email"] = reply_to
-    async with _LIMITE:
-        for tentativo in range(4):
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": EMAIL_KEY}, json=payload)
-            if resp.status_code != 429:
-                break
-            await asyncio.sleep(2 ** tentativo)
+    for tentativo in range(4):
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+        if resp.status_code != 429:
+            break
+        await asyncio.sleep(2 ** tentativo)
     if resp.status_code >= 400:
         try:
             body = resp.json()
@@ -199,26 +205,73 @@ _SICUREZZA = {
 }
 
 
+def tpl_prova():
+    return ("Email di prova dal Portale", _layout("Email di prova", ["Se leggi questo messaggio, le email della tua concessionaria sono configurate correttamente."]))
+
+
 def tpl_sicurezza(u: dict, evento: str):
     titolo, testo = _SICUREZZA[evento]
     return (titolo, _layout(titolo, [f"Ciao {_nome(u)},", testo, "Se non sei stato tu, contatta subito la segreteria della tua concessionaria."]))
 
 
-# ---------- Invio in background ----------
-async def _reply_to_for(user: dict) -> Optional[str]:
-    if not user.get("sede_id"):
-        return None
-    try:
-        sede = await db.sedi.find_one({"_id": ObjectId(user["sede_id"])}, {"email_contatto": 1})
-    except Exception:
-        return None
-    return (sede or {}).get("email_contatto") or None
+# ---------- Configurazione per sede (nessuna | smtp | emergent) ----------
+def _fernet() -> Fernet:
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(JWT_SECRET.encode()).digest()))
+
+
+def cifra(testo: str) -> str:
+    return _fernet().encrypt(testo.encode()).decode()
+
+
+def decifra(testo: str) -> str:
+    return _fernet().decrypt(testo.encode()).decode()
+
+
+def _smtp_send(cfg: dict, to: str, subject: str, html: str, reply_to: Optional[str]) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr((EMAIL_FROM_NAME, cfg["smtp_from"] or cfg["smtp_user"]))
+    msg["To"] = to
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.set_content("Apri questa email con un programma che supporta l'HTML.")
+    msg.add_alternative(html, subtype="html")
+    password = decifra(cfg["smtp_password_enc"]) if cfg.get("smtp_password_enc") else ""
+    if cfg.get("smtp_tls") == "ssl":
+        server = smtplib.SMTP_SSL(cfg["smtp_host"], int(cfg["smtp_port"]), timeout=20, context=ssl.create_default_context())
+    else:
+        server = smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"]), timeout=20)
+        server.starttls(context=ssl.create_default_context())
+    with server:
+        if cfg.get("smtp_user"):
+            server.login(cfg["smtp_user"], password)
+        server.send_message(msg)
+
+
+async def sede_per_utente(user: dict) -> Optional[dict]:
+    """Sede dell'utente; per chi non ha sede (SuperAdmin) si usa la Sede Nazionale."""
+    query = {"_id": ObjectId(user["sede_id"])} if user.get("sede_id") else {"is_nazionale": True}
+    return await db.sedi.find_one(query, {"email_config": 1, "email_contatto": 1})
+
+
+async def invia_con_config(cfg: dict, to: str, tpl: tuple, reply_to: Optional[str]) -> None:
+    subject, html = tpl
+    _assert_safe_email(subject, html)
+    modalita = cfg.get("modalita", "nessuna")
+    if modalita == "smtp":
+        await asyncio.wait_for(asyncio.to_thread(_smtp_send, cfg, to, subject, html, reply_to), timeout=40)
+    elif modalita == "emergent":
+        await send_email(to=to, subject=subject, html=html, reply_to=reply_to)
 
 
 async def _invia(user: dict, tpl: tuple) -> None:
     try:
-        subject, html = tpl
-        await send_email(to=user["email"], subject=subject, html=html, reply_to=await _reply_to_for(user))
+        sede = await sede_per_utente(user) or {}
+        cfg = sede.get("email_config") or {}
+        if cfg.get("modalita", "nessuna") == "nessuna":
+            return
+        async with _LIMITE:
+            await invia_con_config(cfg, user["email"], tpl, sede.get("email_contatto"))
     except Exception as e:
         logger.error(f"Errore invio email a utente {user.get('_id') or user.get('id')}: {e}")
 

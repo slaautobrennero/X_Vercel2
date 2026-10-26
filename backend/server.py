@@ -55,6 +55,7 @@ from core.scheduler import _pending_reimbursements_scheduler
 from routes import (
     annunci as routes_annunci,
     cartelle as routes_cartelle,
+    push as routes_push,
     audit as routes_audit,
     auth as routes_auth,
     contatti as routes_contatti,
@@ -73,7 +74,7 @@ from routes import (
 
 # ==================== CONFIGURAZIONE APP ====================
 
-APP_VERSION = "0.14.4-beta"
+APP_VERSION = "0.14.5-beta"
 APP_BUILD_DATE = "2026-02-15"
 APP_RELEASE_NAME = "Sede Nazionale"
 
@@ -120,6 +121,7 @@ api_router.include_router(routes_annunci.router)
 api_router.include_router(routes_contatti.router)
 api_router.include_router(routes_documenti.router)
 api_router.include_router(routes_cartelle.router)
+api_router.include_router(routes_push.router)
 api_router.include_router(routes_notifiche.router)
 api_router.include_router(routes_system.router)
 api_router.include_router(routes_reports.router)

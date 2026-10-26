@@ -5,6 +5,9 @@ Gestione concessionarie/sedi.
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from typing import Literal, Optional
+
+from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, HTTPException, Request
 
 from core.auth import get_current_user
@@ -16,6 +19,7 @@ from core.roles import (
     user_has_role,
 )
 from core.audit import _log_audit
+from core import email as mail
 from models_api import SedeCreate, SedeEmailContatto, SedeUpdate
 
 router = APIRouter()
@@ -155,3 +159,75 @@ async def update_email_contatto(sede_id: str, payload: SedeEmailContatto, reques
                      target_label=sede.get("nome", ""), sede_id=sede_id,
                      old_value=sede.get("email_contatto"), new_value=nuova)
     return {"message": "Email della concessionaria aggiornata", "email_contatto": nuova}
+
+
+class EmailConfigUpdate(BaseModel):
+    modalita: Literal["nessuna", "smtp", "emergent"]
+    smtp_host: Optional[str] = Field(None, max_length=200)
+    smtp_port: Optional[int] = Field(None, ge=1, le=65535)
+    smtp_tls: Literal["starttls", "ssl"] = "starttls"
+    smtp_user: Optional[str] = Field(None, max_length=200)
+    smtp_password: Optional[str] = Field(None, max_length=300)
+    smtp_from: Optional[EmailStr] = None
+
+
+async def _sede_gestibile(sede_id: str, request: Request):
+    user = await get_current_user(request)
+    if not (user_has_role(user, "superadmin") or (user_has_role(user, "admin") and user.get("sede_id") == sede_id)):
+        raise HTTPException(status_code=403, detail="Solo l'Admin della concessionaria o il SuperAdmin")
+    sede = await db.sedi.find_one({"_id": ObjectId(sede_id)})
+    if not sede:
+        raise HTTPException(status_code=404, detail="Sede non trovata")
+    return user, sede
+
+
+def _cfg_pubblica(cfg: dict) -> dict:
+    out = {k: v for k, v in cfg.items() if k != "smtp_password_enc"}
+    out["password_impostata"] = bool(cfg.get("smtp_password_enc"))
+    out.setdefault("modalita", "nessuna")
+    out["emergent_disponibile"] = bool(mail.EMAIL_KEY)
+    return out
+
+
+@router.get("/sedi/{sede_id}/email-config")
+async def get_email_config(sede_id: str, request: Request):
+    _, sede = await _sede_gestibile(sede_id, request)
+    return _cfg_pubblica(sede.get("email_config") or {})
+
+
+@router.put("/sedi/{sede_id}/email-config")
+async def update_email_config(sede_id: str, payload: EmailConfigUpdate, request: Request):
+    user, sede = await _sede_gestibile(sede_id, request)
+    vecchia = sede.get("email_config") or {}
+    cfg = {"modalita": payload.modalita}
+    if payload.modalita == "smtp":
+        if not payload.smtp_host or not payload.smtp_port or not payload.smtp_user:
+            raise HTTPException(status_code=400, detail="Per la casella email servono server, porta e utente")
+        cfg.update(smtp_host=payload.smtp_host.strip(), smtp_port=payload.smtp_port, smtp_tls=payload.smtp_tls,
+                   smtp_user=payload.smtp_user.strip(), smtp_from=str(payload.smtp_from) if payload.smtp_from else None)
+        if payload.smtp_password:
+            cfg["smtp_password_enc"] = mail.cifra(payload.smtp_password)
+        elif vecchia.get("smtp_password_enc"):
+            cfg["smtp_password_enc"] = vecchia["smtp_password_enc"]
+        else:
+            raise HTTPException(status_code=400, detail="Inserisci la password della casella email")
+    if payload.modalita == "emergent" and not mail.EMAIL_KEY:
+        raise HTTPException(status_code=400, detail="Il servizio a pagamento non è attivo su questo portale")
+    await db.sedi.update_one({"_id": sede["_id"]}, {"$set": {"email_config": cfg}})
+    await _log_audit(actor=user, action="sede.email_config", target_type="sede", target_id=sede_id,
+                     target_label=sede.get("nome", ""), sede_id=sede_id,
+                     old_value=vecchia.get("modalita", "nessuna"), new_value=payload.modalita)
+    return _cfg_pubblica(cfg)
+
+
+@router.post("/sedi/{sede_id}/email-config/test")
+async def test_email_config(sede_id: str, request: Request):
+    user, sede = await _sede_gestibile(sede_id, request)
+    cfg = sede.get("email_config") or {}
+    if cfg.get("modalita", "nessuna") == "nessuna":
+        raise HTTPException(status_code=400, detail="Le email sono disattivate per questa concessionaria")
+    try:
+        await mail.invia_con_config(cfg, user["email"], mail.tpl_prova(), sede.get("email_contatto"))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invio non riuscito: {str(e)[:200]}")
+    return {"message": f"Email di prova inviata a {user['email']}"}
