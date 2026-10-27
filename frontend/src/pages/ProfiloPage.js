@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { RUOLI, RUOLO_BADGE_COLOR, hasAnyRole } from '../lib/utils';
 import TwoFactorSection from '../components/TwoFactorSection';
 import PrivacyDatiSection from '../components/PrivacyDatiSection';
-import { SedeEmailConfig } from '../components/SedeEmailConfig';
+import { PreferenzeEmailCard } from '../components/PreferenzeEmailCard';
 import { NotifichePushCard } from '../components/NotifichePushCard';
 import axios from 'axios';
 import { User, Mail, Phone, MapPin, CreditCard, Save, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
@@ -355,7 +355,7 @@ export default function ProfiloPage() {
 
       <NotifichePushCard />
 
-      {hasAnyRole(user, ['admin', 'superadmin']) && <SedeEmailConfig user={user} />}
+      <PreferenzeEmailCard />
 
       {/* Sezione GDPR: Privacy & I miei dati (per tutti gli utenti autenticati) */}
       <PrivacyDatiSection />

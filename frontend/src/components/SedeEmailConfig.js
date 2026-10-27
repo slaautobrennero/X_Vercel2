@@ -2,18 +2,18 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Mail, Send } from 'lucide-react';
-import { hasRole } from '../lib/utils';
+import { EMAIL_PROVIDERS, providerDaHost } from '../lib/emailProviders';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const inputCls = 'w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:border-[#1E4D8C] outline-none';
+export const inputCls = 'w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:border-[#1E4D8C] outline-none';
 const VUOTA = { modalita: 'nessuna', smtp_host: '', smtp_port: 587, smtp_tls: 'starttls', smtp_user: '', smtp_password: '', smtp_from: '' };
 
-const Campo = ({ label, children }) => (
+export const Campo = ({ label, children }) => (
   <label className="block"><span className="block text-xs font-medium text-gray-700 mb-1">{label}</span>{children}</label>
 );
 
 const Opzione = ({ value, cfg, setCfg, titolo, desc, disabled }) => (
-  <label className={`flex gap-3 p-3 border rounded-md cursor-pointer ${cfg.modalita === value ? 'border-[#1E4D8C] bg-blue-50/40' : 'border-gray-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+  <label className={`flex gap-3 p-3 border rounded-md cursor-pointer transition-colors ${cfg.modalita === value ? 'border-[#1E4D8C] bg-blue-50/40' : 'border-gray-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
     <input type="radio" name="modalita" value={value} checked={cfg.modalita === value} disabled={disabled}
       onChange={() => setCfg({ ...cfg, modalita: value })} data-testid={`email-modalita-${value}`} />
     <span><span className="block text-sm font-medium text-gray-900">{titolo}</span><span className="block text-xs text-gray-600">{desc}</span></span>
@@ -21,11 +21,24 @@ const Opzione = ({ value, cfg, setCfg, titolo, desc, disabled }) => (
 );
 
 const SmtpCampi = ({ cfg, setCfg, passwordImpostata }) => {
+  const [provider, setProvider] = useState(providerDaHost(cfg.smtp_host));
+  useEffect(() => { setProvider(providerDaHost(cfg.smtp_host)); }, [cfg.smtp_host === '']); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k) => (e) => setCfg({ ...cfg, [k]: e.target.value });
-  const gmail = () => setCfg({ ...cfg, smtp_host: 'smtp.gmail.com', smtp_port: 587, smtp_tls: 'starttls' });
+  const scegli = (e) => {
+    const p = EMAIL_PROVIDERS.find((x) => x.id === e.target.value);
+    setProvider(e.target.value);
+    if (p && p.id !== 'altro') setCfg({ ...cfg, smtp_host: p.host, smtp_port: p.port, smtp_tls: p.tls });
+  };
+  const info = EMAIL_PROVIDERS.find((x) => x.id === provider);
   return (
     <div className="space-y-3 border border-gray-200 rounded-md p-3">
-      <button type="button" onClick={gmail} className="text-xs text-[#1E4D8C] hover:underline" data-testid="email-preset-gmail">Usa le impostazioni di Gmail</button>
+      <Campo label="Il vostro provider email">
+        <select value={provider} onChange={scegli} className={inputCls} data-testid="email-provider-select">
+          <option value="">Scegli il provider…</option>
+          {EMAIL_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+        </select>
+      </Campo>
+      {info && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5" data-testid="email-provider-nota">{info.nota}</p>}
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="sm:col-span-2"><Campo label="Server (SMTP)"><input value={cfg.smtp_host} onChange={set('smtp_host')} placeholder="smtps.aruba.it" className={inputCls} data-testid="email-smtp-host" /></Campo></div>
         <Campo label="Porta"><input type="number" value={cfg.smtp_port} onChange={set('smtp_port')} className={inputCls} data-testid="email-smtp-port" /></Campo>
@@ -43,33 +56,24 @@ const SmtpCampi = ({ cfg, setCfg, passwordImpostata }) => {
         </Campo>
       </div>
       <Campo label="Mittente (se diverso dall'utente)"><input value={cfg.smtp_from || ''} onChange={set('smtp_from')} className={inputCls} data-testid="email-smtp-from" /></Campo>
-      <p className="text-xs text-gray-500">Con Gmail serve una "password per le app" (Account Google → Sicurezza → Verifica in due passaggi → Password per le app), non la password normale.</p>
     </div>
   );
 };
 
-export const SedeEmailConfig = ({ user }) => {
-  const isSuper = hasRole(user, 'superadmin');
-  const [sedi, setSedi] = useState([]);
-  const [sedeId, setSedeId] = useState(user?.sede_id || '');
+export const SedeEmailConfig = ({ sedeId, emailContatto, onSalvato }) => {
   const [cfg, setCfg] = useState(VUOTA);
   const [info, setInfo] = useState({ password_impostata: false, emergent_disponibile: false });
-  const [contatto, setContatto] = useState('');
+  const [contatto, setContatto] = useState(emailContatto || '');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/sedi`).then((r) => { setSedi(r.data); if (!sedeId) setSedeId(r.data[0]?.id || ''); });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!sedeId) return;
-    setContatto(sedi.find((s) => s.id === sedeId)?.email_contatto || '');
+    setContatto(emailContatto || '');
     axios.get(`${API}/sedi/${sedeId}/email-config`).then((r) => {
       const { password_impostata, emergent_disponibile, ...rest } = r.data;
       setCfg({ ...VUOTA, ...rest, smtp_password: '' });
       setInfo({ password_impostata, emergent_disponibile });
     });
-  }, [sedeId, sedi]);
+  }, [sedeId, emailContatto]);
 
   const errore = (err) => { const d = err.response?.data?.detail; toast.error(typeof d === 'string' ? d : 'Dati non validi'); };
 
@@ -83,6 +87,7 @@ export const SedeEmailConfig = ({ user }) => {
       setInfo((i) => ({ ...i, password_impostata: r.data.password_impostata }));
       setCfg((c) => ({ ...c, smtp_password: '' }));
       toast.success('Impostazioni email salvate');
+      onSalvato?.();
     } catch (err) { errore(err); } finally { setBusy(false); }
   };
 
@@ -92,21 +97,15 @@ export const SedeEmailConfig = ({ user }) => {
     catch (err) { errore(err); } finally { setBusy(false); }
   };
 
-  if (!sedeId) return null;
   return (
     <form onSubmit={salva} className="bg-white border border-gray-200 rounded-lg p-6 space-y-4" data-testid="sede-email-config">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><Mail size={18} /> Email della concessionaria</h2>
-        <p className="text-sm text-gray-600 mt-1">Scegli come la tua concessionaria invia le email (password dimenticata, approvazioni, rimborsi, avvisi di sicurezza).</p>
+        <p className="text-sm text-gray-600 mt-1">Scegli come la concessionaria invia le email (password dimenticata, approvazioni, rimborsi, nuovi documenti, avvisi di sicurezza).</p>
       </div>
-      {isSuper && (
-        <select value={sedeId} onChange={(e) => setSedeId(e.target.value)} className={inputCls} data-testid="sede-email-select">
-          {sedi.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
-        </select>
-      )}
       <div className="space-y-2">
         <Opzione value="nessuna" cfg={cfg} setCfg={setCfg} titolo="Nessuna email (gratis)" desc="Avvisi solo nel portale e sul telefono. La password dimenticata la reimposta la segreteria." />
-        <Opzione value="smtp" cfg={cfg} setCfg={setCfg} titolo="Casella email propria o Gmail (gratis)" desc="Il portale invia dalla casella del vostro dominio o da un account Gmail." />
+        <Opzione value="smtp" cfg={cfg} setCfg={setCfg} titolo="Casella email propria o Gmail (gratis)" desc="Il portale invia dalla casella del vostro dominio o da un account Gmail, Libero, Outlook…" />
         <Opzione value="emergent" cfg={cfg} setCfg={setCfg} disabled={!info.emergent_disponibile} titolo="Servizio email a pagamento" desc={info.emergent_disponibile ? 'Nessuna configurazione, ogni email ha un costo.' : 'Non attivo su questo portale.'} />
       </div>
       {cfg.modalita === 'smtp' && <SmtpCampi cfg={cfg} setCfg={setCfg} passwordImpostata={info.password_impostata} />}

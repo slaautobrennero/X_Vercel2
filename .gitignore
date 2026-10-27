@@ -77,3 +77,4 @@ credentials.json
 .credentials
 frontend/node_modules/.cache/default-development/1.pack
 .ruff_cache/
+frontend/node_modules/.cache/default-development/2.pack

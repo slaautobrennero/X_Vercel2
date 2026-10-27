@@ -1,6 +1,6 @@
 """Cartelle documenti: create/eliminate da Admin (propria sede) e SuperAdmin, visibili o riservate."""
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request
@@ -24,6 +24,11 @@ class CartellaCreate(BaseModel):
 
 class VisibilitaUpdate(BaseModel):
     visibile: bool
+
+
+class InvioEmailUpdate(BaseModel):
+    # cartella di una sede: no | si ; cartella comune: no | nazionale | tutte
+    invio_email: Literal["no", "si", "nazionale", "tutte"]
 
 
 async def _sedi_amministrate(user: dict) -> set:
@@ -94,6 +99,7 @@ async def lista_cartelle(request: Request):
             "nome": c["nome"],
             "sede_id": c.get("sede_id"),
             "visibile": c.get("visibile", True),
+            "invio_email": c.get("invio_email", "no"),
             "num_documenti": await db.documenti.count_documents({"cartella_id": cid}),
             "gestibile": await puo_gestire(user, c),
             "caricabile": await puo_caricare(user, c),
@@ -143,6 +149,22 @@ async def cambia_visibilita(cartella_id: str, payload: VisibilitaUpdate, request
                      old_value="visibile" if cartella.get("visibile", True) else "riservata",
                      new_value="visibile" if payload.visibile else "riservata")
     return {"message": "Visibilità aggiornata"}
+
+
+@router.put("/cartelle/{cartella_id}/invio-email")
+async def cambia_invio_email(cartella_id: str, payload: InvioEmailUpdate, request: Request):
+    user = await get_current_user(request)
+    cartella = await get_cartella(cartella_id)
+    if not await puo_gestire(user, cartella):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    comune = cartella.get("sede_id") is None
+    if payload.invio_email != "no" and comune != (payload.invio_email in ("nazionale", "tutte")):
+        raise HTTPException(status_code=400, detail="Scelta non valida per questa cartella")
+    await db.cartelle.update_one({"_id": cartella["_id"]}, {"$set": {"invio_email": payload.invio_email}})
+    await _log_audit(actor=user, action="cartella.invio_email", target_type="cartella", target_id=cartella_id,
+                     target_label=cartella["nome"], sede_id=cartella.get("sede_id"),
+                     old_value=cartella.get("invio_email", "no"), new_value=payload.invio_email)
+    return {"message": "Invio automatico aggiornato", "invio_email": payload.invio_email}
 
 
 @router.delete("/cartelle/{cartella_id}")

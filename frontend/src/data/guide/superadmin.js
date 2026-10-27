@@ -10,22 +10,22 @@ const guidaSuperAdmin = {
   sezioni: [
     {
       id: 'sedi',
-      titolo: 'Gestire le Sedi (concessionarie)',
+      titolo: 'Gestire le concessionarie',
       icona: Building2,
-      intro: 'Ogni concessionaria è una sede, con le sue tariffe e regole di rimborso.',
+      intro: 'In "Impostazioni" vedi il riepilogo di tutte le concessionarie (il Nazionale è sempre in cima): clicca una riga per correggerne le impostazioni.',
       passi: [
-        { t: 'Crea una sede', d: 'In Sedi inserisci Codice (es. A22, CAV, ASPI), Nome Concessionaria e Indirizzo.', btn: 'Sedi' },
-        { t: 'Imposta le tariffe', d: 'Tariffa KM (€), Rimborso Pasti (€) e se il rimborso dell\'autostrada è abilitato.' },
-        { t: 'Sede Nazionale', d: 'Con l\'icona "Marca come Nazionale" scegli la sede che avrà visione in sola lettura su tutte le altre.' },
+        { t: 'Crea una concessionaria', d: 'In Impostazioni premi "Nuova concessionaria" e inserisci Nome, Codice (es. A22, CAV, ASPI) e tariffe.', btn: 'Nuova concessionaria' },
+        { t: 'Rimborsi, email, invii', d: 'Dentro la concessionaria trovi le schede Rimborsi (tariffe e motivi), Email (come invia le email) e Invii automatici (quali cartelle mandano email). Puoi correggerle se l\'Admin locale non è pratico.' },
+        { t: 'Sede Nazionale', d: 'Con "Rendi Nazionale" scegli la sede che avrà visione in sola lettura su tutte le altre. Ce n\'è sempre una sola.', btn: 'Rendi Nazionale' },
       ],
     },
     {
       id: 'motivi',
       titolo: 'Motivi di rimborso',
       icona: ListChecks,
-      intro: 'I motivi compaiono nel menu a tendina della richiesta di rimborso.',
+      intro: 'I motivi compaiono nel menu a tendina della richiesta di rimborso. Li gestisci solo tu, su richiesta delle concessionarie, così i report restano coerenti.',
       passi: [
-        { t: 'Aggiungi o modifica', d: 'In Motivi Rimborso crea voci come RSA, Sede, Altro.', btn: 'Motivi Rimborso' },
+        { t: 'Aggiungi o modifica', d: 'In Impostazioni apri la concessionaria → scheda Rimborsi → "Nuovo motivo". Spunta "Valido per tutte le concessionarie" per un motivo comune.', btn: 'Nuovo motivo' },
         { t: 'Note obbligatorie', d: 'Attiva "richiede note" per i motivi generici: il delegato dovrà spiegare la trasferta.' },
       ],
     },

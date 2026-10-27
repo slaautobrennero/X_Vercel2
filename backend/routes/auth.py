@@ -232,6 +232,17 @@ async def get_me(request: Request):
     return user
 
 
+class PreferenzeUpdate(BaseModel):
+    email_documenti: bool
+
+
+@router.put("/auth/me/preferenze")
+async def aggiorna_preferenze(payload: PreferenzeUpdate, request: Request):
+    user = await get_current_user(request)
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"email_documenti": payload.email_documenti}})
+    return {"email_documenti": payload.email_documenti}
+
+
 # === 2FA TOTP ===
 # Disponibile solo per ruoli sensibili (admin, superadmin).
 

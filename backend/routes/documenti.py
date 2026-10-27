@@ -14,7 +14,9 @@ from core.auth import get_current_user
 from core.db import db
 from core.storage import delete_upload, get_local_path, require_ext, save_upload
 from core.notifications import _notify_all_in_sede
+from core import email as mail
 from core.roles import (
+    get_sede_nazionale_id,
     is_sede_nazionale_member,
     user_has_any_role,
 )
@@ -55,6 +57,26 @@ async def get_documenti(request: Request, categoria: Optional[str] = None, carte
         documenti.append(doc)
 
     return documenti
+
+
+def filtro_destinatari(invio: str, sede_id: Optional[str], naz_id: Optional[str], autore_id: str) -> dict:
+    query = {"_id": {"$ne": ObjectId(autore_id)}, "disabled": {"$ne": True},
+             "stato_approvazione": {"$ne": "in_attesa"}, "email_documenti": {"$ne": False}}
+    if invio == "si":
+        query["sede_id"] = sede_id
+    elif invio == "nazionale":
+        query["sede_id"] = naz_id
+    return query
+
+
+async def _email_nuovo_documento(cartella: dict, nome_doc: str, autore_id: str) -> None:
+    invio = cartella.get("invio_email", "no")
+    if invio == "no":
+        return
+    naz_id = await get_sede_nazionale_id() if invio == "nazionale" else None
+    query = filtro_destinatari(invio, cartella.get("sede_id"), naz_id, autore_id)
+    utenti = [u async for u in db.users.find(query, {"email": 1, "nome": 1, "sede_id": 1})]
+    mail.invia_email_a_molti(utenti, lambda u: mail.tpl_nuovo_documento(u, nome_doc, cartella["nome"]))
 
 
 @router.post("/documenti")
@@ -117,6 +139,7 @@ async def upload_documento(
             },
             exclude_user_id=user["id"],
         )
+        await _email_nuovo_documento(cartella, nome, user["id"])
 
     return doc_record
 

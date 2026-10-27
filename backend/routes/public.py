@@ -6,9 +6,9 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-APP_VERSION = "0.14.5-beta"
+APP_VERSION = "0.14.6-beta"
 APP_BUILD_DATE = "2026-06-15"
-APP_RELEASE_NAME = "Notifiche push ed email per sede"
+APP_RELEASE_NAME = "Impostazioni per concessionaria"
 
 
 @router.get("/health")

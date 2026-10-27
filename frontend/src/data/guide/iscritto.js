@@ -79,6 +79,7 @@ const guidaIscritto = {
         { t: 'Guarda la campanella', d: 'In alto, l\'icona a campanella mostra quante notifiche non hai ancora letto.' },
         { t: 'Apri le Notifiche', d: 'Clicca la campanella o la voce Notifiche nel menu per vederle tutte.', btn: 'Notifiche' },
         { t: 'Avvisi sul telefono (gratis)', d: 'Nel Profilo, in "Notifiche sul telefono", premi Attiva: riceverai gli avvisi anche con il portale chiuso. Su iPhone prima aggiungi il portale alla schermata Home da Safari (tasto Condividi).', btn: 'Attiva le notifiche' },
+        { t: 'Email dei nuovi documenti', d: 'Se la tua concessionaria le ha attivate, ricevi un\'email quando viene caricato un nuovo documento. Puoi disattivarle dal Profilo, in "Email dei nuovi documenti".' },
       ],
     },
     {

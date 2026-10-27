@@ -47,9 +47,8 @@ import RimborsiPage from './pages/RimborsiPage';
 import NotifichePage from './pages/NotifichePage';
 import UtentiPage from './pages/UtentiPage';
 import AuditLogPage from './pages/AuditLogPage';
-import SediPage from './pages/SediPage';
+import ImpostazioniPage from './pages/ImpostazioniPage';
 import ProfiloPage from './pages/ProfiloPage';
-import MotiviRimborsoPage from './pages/MotiviRimborsoPage';
 import ReportPage from './pages/ReportPage';
 import ImpostazioniSindacatoPage from './pages/ImpostazioniSindacatoPage';
 import GuidaPage from './pages/GuidaPage';
@@ -165,16 +164,18 @@ function AppRoutes() {
             <AuditLogPage />
           </ProtectedRoute>
         } />
-        <Route path="sedi" element={
-          <ProtectedRoute allowedRoles={['superadmin']}>
-            <SediPage />
+        <Route path="impostazioni" element={
+          <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+            <ImpostazioniPage />
           </ProtectedRoute>
         } />
-        <Route path="motivi-rimborso" element={
-          <ProtectedRoute allowedRoles={['superadmin']}>
-            <MotiviRimborsoPage />
+        <Route path="impostazioni/:sedeId" element={
+          <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+            <ImpostazioniPage />
           </ProtectedRoute>
         } />
+        <Route path="sedi" element={<Navigate to="/impostazioni" replace />} />
+        <Route path="motivi-rimborso" element={<Navigate to="/impostazioni" replace />} />
         <Route path="report" element={
           <ProtectedRoute allowedRoles={['admin', 'cassiere', 'superadmin', 'superuser']}>
             <ReportPage />

@@ -53,7 +53,9 @@ const guidaAdmin = {
         { t: 'Crea una cartella', d: 'In Documenti premi "Nuova cartella" e dai un nome (es. Modulistica, Contratti).', btn: 'Nuova cartella' },
         { t: 'Visibile o riservata', d: 'Con "Rendi riservata" la cartella e i documenti dentro li vedono solo gli Admin; con "Rendi visibile" tornano visibili a tutti.', btn: 'Rendi riservata' },
         { t: 'Eliminare una cartella', d: 'Si può eliminare solo quando è vuota: prima elimina i documenti al suo interno.' },
-        { t: 'Email della concessionaria', d: 'Nel Profilo, in "Email della concessionaria", scegli: nessuna email (gratis), la casella del vostro dominio o un Gmail gratuito, oppure il servizio a pagamento se attivo. Indica anche l\'indirizzo per le risposte e premi "Invia email di prova".', btn: 'Invia email di prova' },
+        { t: 'Impostazioni della concessionaria', d: 'Nel menu a sinistra apri "Impostazioni". Nella scheda Rimborsi cambi tariffa al km, pasti e autostrada; i motivi di rimborso li aggiunge il SuperAdmin su vostra richiesta.', btn: 'Impostazioni' },
+        { t: 'Email della concessionaria', d: 'In Impostazioni → Email scegli: nessuna email (gratis), la casella del vostro dominio o un Gmail/Libero/Outlook gratuito (scegli il provider dal menu e i dati del server si compilano da soli), oppure il servizio a pagamento se attivo. Indica l\'indirizzo per le risposte e premi "Invia email di prova".', btn: 'Invia email di prova' },
+        { t: 'Invii automatici', d: 'In Impostazioni → Invii automatici scegli per quali cartelle, quando si carica un nuovo file, parte un\'email a tutti gli iscritti. Ognuno può disattivarle dal proprio Profilo.' },
       ],
     },
     {

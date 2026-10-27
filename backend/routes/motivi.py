@@ -3,23 +3,34 @@ routes/motivi.py
 Gestione motivi-rimborso (RSA, Sede, Altro, ...).
 """
 from datetime import datetime, timezone
+from typing import Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request
 
 from core.auth import get_current_user
 from core.db import db
-from core.roles import user_has_any_role
+from core.roles import is_sede_nazionale_member, user_has_any_role
 from models_api import MotivoRimborsoCreate, MotivoRimborsoUpdate
 
 router = APIRouter()
 
 
+def filtro_sede(sede_id: str) -> dict:
+    """Motivi comuni (sede_ids vuoto) + quelli riservati alla sede."""
+    return {"$or": [{"sede_ids": {"$exists": False}}, {"sede_ids": {"$size": 0}}, {"sede_ids": sede_id}]}
+
+
 @router.get("/motivi-rimborso")
-async def get_motivi_rimborso(request: Request):
-    await get_current_user(request)
+async def get_motivi_rimborso(request: Request, sede_id: Optional[str] = None):
+    user = await get_current_user(request)
+    vede_tutto = user_has_any_role(user, ["superadmin"]) or await is_sede_nazionale_member(user)
+    if not vede_tutto:
+        sede_id = user.get("sede_id")
+    query = filtro_sede(sede_id) if sede_id else {}
     motivi = []
-    async for motivo in db.motivi_rimborso.find({}):
+    async for motivo in db.motivi_rimborso.find(query).sort("nome", 1):
+        motivo.setdefault("sede_ids", [])
         motivo["id"] = str(motivo["_id"])
         motivo.pop("_id")
         motivi.append(motivo)
@@ -36,6 +47,7 @@ async def create_motivo_rimborso(motivo_data: MotivoRimborsoCreate, request: Req
         "nome": motivo_data.nome,
         "descrizione": motivo_data.descrizione,
         "richiede_note": motivo_data.richiede_note,
+        "sede_ids": motivo_data.sede_ids,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 

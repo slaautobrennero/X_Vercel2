@@ -493,7 +493,7 @@ export default function RimborsiPage() {
                     data-testid="rimborso-motivo-select"
                   >
                     <option value="">Seleziona motivo</option>
-                    {motivi.map(m => (
+                    {motivi.filter(m => !m.sede_ids?.length || m.sede_ids.includes(user?.sede_id)).map(m => (
                       <option key={m.id} value={m.id}>{m.nome}</option>
                     ))}
                   </select>

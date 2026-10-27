@@ -37,6 +37,32 @@ async def get_sedi(request: Request):  # noqa: ARG001
     return sedi
 
 
+@router.get("/sedi/riepilogo-impostazioni")
+async def riepilogo_impostazioni(request: Request):
+    """SuperAdmin: impostazioni di tutte le concessionarie, Nazionale in cima."""
+    user = await get_current_user(request)
+    if not user_has_role(user, "superadmin"):
+        raise HTTPException(status_code=403, detail="Solo il SuperAdmin")
+    righe = []
+    async for s in db.sedi.find({}):
+        sid = str(s["_id"])
+        righe.append({
+            "id": sid,
+            "nome": s["nome"],
+            "codice": s.get("codice"),
+            "is_nazionale": bool(s.get("is_nazionale")),
+            "tariffa_km": s.get("tariffa_km"),
+            "rimborso_pasti": s.get("rimborso_pasti"),
+            "rimborso_autostrada": s.get("rimborso_autostrada"),
+            "email_modalita": (s.get("email_config") or {}).get("modalita", "nessuna"),
+            "motivi_propri": await db.motivi_rimborso.count_documents({"sede_ids": sid}),
+            "cartelle_con_invio": await db.cartelle.count_documents({"sede_id": sid, "invio_email": {"$in": ["si"]}}),
+            "utenti": await db.users.count_documents({"sede_id": sid}),
+        })
+    righe.sort(key=lambda r: (not r["is_nazionale"], r["nome"].lower()))
+    return righe
+
+
 @router.post("/sedi")
 async def create_sede(sede_data: SedeCreate, request: Request):
     user = await get_current_user(request)

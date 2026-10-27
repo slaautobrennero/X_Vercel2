@@ -12,7 +12,6 @@ import {
   Megaphone, 
   Bell, 
   Users, 
-  Building2, 
   LogOut, 
   Menu, 
   ChevronDown,
@@ -59,8 +58,7 @@ export default function MainLayout() {
 
   const canAccessRimborsi = hasAnyRole(user, ['delegato', 'segreteria', 'segretario', 'cassiere', 'admin', 'superadmin', 'superuser']);
   const canManageUsers = hasAnyRole(user, ['segretario', 'admin', 'superadmin', 'superuser']);
-  const canManageSedi = hasRole(user, 'superadmin');
-  const canManageMotivi = hasRole(user, 'superadmin');
+  const canManageSedeSettings = hasAnyRole(user, ['admin', 'superadmin']);
   const canManageImpostazioni = hasRole(user, 'superadmin');
   const canViewReports = hasAnyRole(user, ['admin', 'cassiere', 'superadmin', 'superuser']);
   const canViewAuditLog = hasAnyRole(user, ['admin', 'cassiere', 'segretario', 'superadmin', 'superuser']);
@@ -74,8 +72,7 @@ export default function MainLayout() {
     { path: '/notifiche', label: 'Notifiche', icon: Bell, show: true },
     { path: '/utenti', label: 'Utenti', icon: Users, show: canManageUsers },
     { path: '/audit-log', label: 'Audit Log', icon: History, show: canViewAuditLog },
-    { path: '/sedi', label: 'Sedi', icon: Building2, show: canManageSedi },
-    { path: '/motivi-rimborso', label: 'Motivi Rimborso', icon: Settings, show: canManageMotivi },
+    { path: '/impostazioni', label: 'Impostazioni', icon: Settings, show: canManageSedeSettings },
     { path: '/impostazioni-sindacato', label: 'Impostazioni Sindacato', icon: ShieldCheck, show: canManageImpostazioni },
     { path: '/guida', label: 'Guide', icon: BookOpen, show: true },
   ];

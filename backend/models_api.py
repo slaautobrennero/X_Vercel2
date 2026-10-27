@@ -114,12 +114,14 @@ class MotivoRimborsoCreate(BaseModel):
     nome: str
     descrizione: Optional[str] = None
     richiede_note: bool = False
+    sede_ids: list[str] = []  # vuoto = valido per tutte le concessionarie
 
 
 class MotivoRimborsoUpdate(BaseModel):
     nome: Optional[str] = None
     descrizione: Optional[str] = None
     richiede_note: Optional[bool] = None
+    sede_ids: Optional[list[str]] = None
 
 
 # --- RIMBORSO ---

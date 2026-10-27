@@ -205,6 +205,11 @@ _SICUREZZA = {
 }
 
 
+def tpl_nuovo_documento(u: dict, nome_doc: str, cartella: str):
+    return (f"Nuovo documento: {nome_doc}"[:150],
+            _layout("Nuovo documento disponibile", [f"Ciao {_nome(u)},", f"nella cartella <b>{escape(cartella)}</b> è stato caricato il documento <b>{escape(nome_doc)}</b>.", "Puoi disattivare queste email dal tuo Profilo."], ("Apri i documenti", _link("/documenti"))))
+
+
 def tpl_prova():
     return ("Email di prova dal Portale", _layout("Email di prova", ["Se leggi questo messaggio, le email della tua concessionaria sono configurate correttamente."]))
 
@@ -281,5 +286,18 @@ def invia_email(user: dict, tpl: tuple) -> None:
     """Non blocca la richiesta: l'email parte in background."""
     if user and user.get("email"):
         task = asyncio.create_task(_invia(user, tpl))
+        _TASKS.add(task)
+        task.add_done_callback(_TASKS.discard)
+
+
+async def _invia_a_molti(utenti: list, tpl_fn) -> None:
+    for u in utenti:
+        await _invia(u, tpl_fn(u))
+
+
+def invia_email_a_molti(utenti: list, tpl_fn) -> None:
+    """Invio in background, uno alla volta, ognuno con la configurazione della propria sede."""
+    if utenti:
+        task = asyncio.create_task(_invia_a_molti(utenti, tpl_fn))
         _TASKS.add(task)
         task.add_done_callback(_TASKS.discard)

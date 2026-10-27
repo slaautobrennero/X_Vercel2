@@ -115,6 +115,8 @@ async def create_rimborso(rimborso_data: RimborsoCreate, request: Request):
         raise HTTPException(status_code=403, detail="Gli iscritti non possono richiedere rimborsi")
 
     motivo = await db.motivi_rimborso.find_one({"_id": ObjectId(rimborso_data.motivo_id)})
+    if motivo and motivo.get("sede_ids") and user.get("sede_id") not in motivo["sede_ids"]:
+        raise HTTPException(status_code=400, detail="Motivo non disponibile per la tua concessionaria")
     if motivo and motivo.get("richiede_note") and not rimborso_data.note:
         raise HTTPException(status_code=400, detail="Per questo motivo le note sono obbligatorie")
 
