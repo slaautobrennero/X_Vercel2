@@ -202,6 +202,8 @@ Apri il link mostrato e accedi. Poi da qualunque rete: `ssh root@100.x.y.z` (IP 
 
 Comandi utili: `sla-status`, `sla-logs`, `docker system df` (spazio usato).
 
+Disco pieno: `sudo bash /opt/portale-sla/scripts/pulizia_raspberry.sh`. Lo script chiede conferma voce per voce: backup di sistema DietPi, cache Docker, backup del portale con più di 30 giorni, log, cache, vecchie copie del codice. Non tocca il database.
+
 ---
 
 ## 8. Checklist go-live
