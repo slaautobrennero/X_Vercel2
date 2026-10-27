@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Plus, Landmark, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../../lib/utils';
 import { NuovaSedeDialog } from './NuovaSedeDialog';
@@ -9,10 +10,12 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EMAIL = { nessuna: ['Nessuna', 'bg-gray-100 text-gray-600'], smtp: ['Casella propria', 'bg-green-50 text-green-700'], emergent: ['A pagamento', 'bg-blue-50 text-[#1E4D8C]'] };
 
 export const RiepilogoSedi = () => {
-  const [righe, setRighe] = useState([]);
+  const [righe, setRighe] = useState(null);
   const [nuova, setNuova] = useState(false);
   const navigate = useNavigate();
-  const carica = useCallback(() => { axios.get(`${API}/sedi/riepilogo-impostazioni`).then((r) => setRighe(r.data)); }, []);
+  const carica = useCallback(() => {
+    axios.get(`${API}/sedi/riepilogo-impostazioni`).then((r) => setRighe(r.data)).catch(() => { setRighe([]); toast.error('Impossibile caricare le concessionarie'); });
+  }, []);
   useEffect(() => { carica(); }, [carica]);
 
   return (
@@ -35,7 +38,9 @@ export const RiepilogoSedi = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {righe.map((s) => (
+            {righe === null && <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-500" data-testid="riepilogo-loading">Caricamento…</td></tr>}
+            {righe?.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-500">Nessuna concessionaria</td></tr>}
+            {(righe || []).map((s) => (
               <tr key={s.id} onClick={() => navigate(`/impostazioni/${s.id}`)} className={`cursor-pointer transition-colors hover:bg-blue-50/40 ${s.is_nazionale ? 'bg-amber-50/50' : ''}`} data-testid={`riepilogo-row-${s.id}`}>
                 <td className="px-4 py-3">
                   <span className="font-medium text-gray-900">{s.nome}</span> <span className="text-xs text-gray-500">{s.codice}</span>

@@ -179,11 +179,12 @@ Apri il link mostrato e accedi. Poi da qualunque rete: `ssh root@100.x.y.z` (IP 
 ## 6. Notifiche ed email
 
 - **Notifiche sul telefono (gratuite)**: ogni utente va su Profilo → "Notifiche sul telefono" → Attiva e accetta il permesso. Su iPhone bisogna prima aggiungere il portale alla schermata Home (Safari → Condividi → Aggiungi a Home). Non serve nessuna chiave: il portale le genera da solo.
-- **Email**: ogni sede sceglie dal proprio pannello (Admin della sede o SuperAdmin):
+- **Email**: ogni sede sceglie da **Impostazioni → Email** (Admin della sede o SuperAdmin; il SuperAdmin vede il riepilogo di tutte le concessionarie):
   - **Nessuna email** (predefinito, costo zero)
   - **Gmail o casella del dominio** (SMTP). Per Gmail serve una "password per le app" (account Google → Sicurezza → Verifica in due passaggi → Password per le app); host `smtp.gmail.com`, porta 587
   - **Servizio gestito**: solo se `EMERGENT_EMAIL_KEY` è impostata
   Usa "Invia email di prova" dopo aver salvato.
+- **Invii automatici**: in Impostazioni → Invii automatici si sceglie per quali cartelle un nuovo documento manda un'email agli iscritti. Ognuno può disattivarle dal Profilo.
 
 ---
 

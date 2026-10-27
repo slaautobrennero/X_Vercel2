@@ -7,7 +7,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 APP_VERSION = "0.14.6-beta"
-APP_BUILD_DATE = "2026-06-15"
+APP_BUILD_DATE = "2026-06-20"
 APP_RELEASE_NAME = "Impostazioni per concessionaria"
 
 

@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend E2E of the new Impostazioni (per-concessionaria settings) feature. Roles covered: SuperAdmin, Admin A22 and Delegato A22, at desktop 1920 and mobile 390. Every requested flow passed. The sidebar shows Impostazioni and no Sedi or Motivi Rimborso entries. The riepilogo table works, with Nazionale sorted first. Creating a concessionaria navigates to its page, and deleting it works through the confirm dialog. Tariffa persists after reload. Motivi can be added (default 'Solo questa'), edited (note obbligatorie) and deleted. On the Email tab, smtp exposes 14 providers plus a placeholder; Gmail fills smtp.gmail.com:587 starttls, Aruba fills smtps.aruba.it:465 ssl, and the nota is shown. Saving shows a success toast and persists after reload. 'Invia email di prova' with fake credentials shows an error toast as expected. Mode was reset to nessuna afterwards. Invii automatici: the select (no/si) persists after reload. The avviso appears only in 'nessuna' mode. A Nazionale sede shows the common cartella with no/nazionale/tutte. The riepilogo reflects email mode and cartelle_con_invio. Admin goes straight to the own sede page, without riepilogo, back link, Rendi Nazionale, Elimina, Nuovo motivo or edit/delete motivo. Admin can save tariffe, and /impostazioni/<other_id> redirects to own sede. Delegato has no Impostazioni menu entry, and /impostazioni, /impostazioni/<id> and /sedi redirect to '/'. Profilo has no 'Email della concessionaria' card. The preferenze-email-card switch toggles, shows a toast and persists after reload (restored to on). The new rimborso form motivo select shows common motivi plus the A22 one and excludes another sede's motivo. /sedi and /motivi-rimborso redirect to /impostazioni. Mobile: the table scrolls inside its container (scrollWidth 723 vs 356) and the document width stays at 390; tabs work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sedi/{id}/email-config/test", "issue": "Error detail exposes the raw smtplib tuple, e.g. \"Invio non riuscito: (535, b'5.7.0 ...autenticazione fallita')\". It works but is not user-friendly; it should map to a readable Italian message (e.g. 'Utente o password errati')."},
+      {"endpoint": "DB hygiene", "issue": "Pre-existing leftover users from earlier backend tests (test_loc_admin_*@example.com, test_naz_admin_*@example.com, stato in_attesa) point to sedi that no longer exist. A backend test teardown is leaking data."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RiepilogoSedi", "issue": "No loading, empty or error state: on first paint only the table header shows until data arrives, and a failed GET shows an empty table silently.", "selector": "[data-testid='impostazioni-riepilogo']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Impostazioni sede", "issues": ["Delete sede, delete motivo and Rendi Nazionale use the native window.confirm instead of the shadcn AlertDialog, which is inconsistent with the rest of the UI.", "Choosing provider 'Altro' keeps the previous preset host/port (e.g. smtps.aruba.it) instead of clearing them. This is acceptable but may confuse users."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/seed_ui_impostazioni.py"],
+  "action_items": [
+    "(Low) Add loading/error state to RiepilogoSedi",
+    "(Low) Humanize SMTP test error messages (535 auth failed, connection refused, timeout)",
+    "(Low) Fix backend test teardown that leaves test_loc_admin_*/test_naz_admin_* users",
+    "(Optional) Replace window.confirm with AlertDialog in SedeAzioniSuper/MotiviSedeCard"
+  ],
+  "critical_code_review_comments": [
+    "ImpostazioniPage SedeImpostazioni fetches the whole GET /api/sedi list to find a single sede. Fine for now; a GET /api/sedi/{id} would be cleaner.",
+    "Once a sede is Nazionale, the UI offers no way to delete or un-mark it; the only path is marking another sede. Probably intended; please confirm.",
+    "SmtpCampi useEffect deps [cfg.smtp_host === ''] carries an eslint-disable. It works, but it is fragile."
+  ],
+  "updated_files": ["/app/backend/tests/seed_ui_impostazioni.py (new seed/clean helper)"],
+  "success_rate": {"backend": "skipped (frontend only)", "frontend": "100% (12/12 requested flows)"},
+  "seed_data_creation": "seed_ui_impostazioni.py seed creates: sede TEST_UIIMP_Other (TUIIMP), users test_uiimp_adm@test.it (admin A22) and test_uiimp_del@test.it (delegato A22) with password Prova123!, cartella TEST_UIIMP_Cartella (A22), motivi TEST_UIIMP_MotivoA22 and TEST_UIIMP_MotivoOther. 'clean' removed everything and restored A22 tariffa 0.35 and email nessuna. The backend was restarted afterwards to clear the in-memory sede-nazionale cache, because the test Nazionale sede was deleted directly in Mongo. Final state: only A22, no Nazionale, 3 motivi, 1 cartella (Modulistica).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use python /app/backend/tests/seed_ui_impostazioni.py seed|clean (ids are printed by seed). A22 id is 69d16c104c9ad3f20753f10b and the common cartella Modulistica is 6adf2f8cb378b543a7a1720a. smtps.aruba.it is actually reachable from preview, so the email test returns 535 with fake credentials. If you delete a Nazionale sede directly in Mongo, restart the backend (core/roles.py caches the nazionale id). Login rate limit is 10/min, and this run used 7 logins."
+}

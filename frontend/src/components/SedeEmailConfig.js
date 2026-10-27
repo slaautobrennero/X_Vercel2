@@ -27,7 +27,7 @@ const SmtpCampi = ({ cfg, setCfg, passwordImpostata }) => {
   const scegli = (e) => {
     const p = EMAIL_PROVIDERS.find((x) => x.id === e.target.value);
     setProvider(e.target.value);
-    if (p && p.id !== 'altro') setCfg({ ...cfg, smtp_host: p.host, smtp_port: p.port, smtp_tls: p.tls });
+    if (p) setCfg({ ...cfg, smtp_host: p.host, smtp_port: p.port, smtp_tls: p.tls });
   };
   const info = EMAIL_PROVIDERS.find((x) => x.id === provider);
   return (

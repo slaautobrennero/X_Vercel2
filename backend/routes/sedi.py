@@ -246,6 +246,20 @@ async def update_email_config(sede_id: str, payload: EmailConfigUpdate, request:
     return _cfg_pubblica(cfg)
 
 
+def _spiega_errore_smtp(e: Exception) -> str:
+    import smtplib
+    import socket
+    if isinstance(e, smtplib.SMTPAuthenticationError):
+        return "utente o password errati (per Gmail, Yahoo e iCloud serve la password per le app)"
+    if isinstance(e, (ConnectionRefusedError, socket.gaierror)):
+        return "server non raggiungibile: controlla nome del server e porta"
+    if isinstance(e, (TimeoutError, socket.timeout)):
+        return "il server non risponde: controlla porta e sicurezza (587 STARTTLS o 465 SSL)"
+    if isinstance(e, smtplib.SMTPRecipientsRefused):
+        return "il destinatario è stato rifiutato dal server"
+    return str(e)[:200]
+
+
 @router.post("/sedi/{sede_id}/email-config/test")
 async def test_email_config(sede_id: str, request: Request):
     user, sede = await _sede_gestibile(sede_id, request)
@@ -255,5 +269,5 @@ async def test_email_config(sede_id: str, request: Request):
     try:
         await mail.invia_con_config(cfg, user["email"], mail.tpl_prova(), sede.get("email_contatto"))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invio non riuscito: {str(e)[:200]}")
+        raise HTTPException(status_code=400, detail=f"Invio non riuscito: {_spiega_errore_smtp(e)}")
     return {"message": f"Email di prova inviata a {user['email']}"}
